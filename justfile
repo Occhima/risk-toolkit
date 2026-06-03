@@ -17,3 +17,9 @@ test:
     uv run pytest
 
 check: lint typecheck test
+
+docs-build:
+    uv run mkdocs build
+
+docs-serve:
+    uv run mkdocs serve --dev-addr 0.0.0.0:8000

@@ -20,6 +20,9 @@ dist/
 !.envrc
 .direnv/
 
+# Docs build output
+site/
+
 # OS/editor
 .DS_Store
 .idea/

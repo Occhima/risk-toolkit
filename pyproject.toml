@@ -30,6 +30,8 @@ dev = [
   "ty>=0.0.1a16",
   "poethepoet>=0.36",
   "schenberg-distributed",
+  "mkdocs-material>=9.5",
+  "mkdocstrings[python]>=0.29",
 ]
 
 [project.optional-dependencies]
@@ -72,3 +74,5 @@ lint = "ruff check ."
 format = "ruff format ."
 typecheck = "ty check"
 check = ["lint", "typecheck", "test"]
+docs-build = "mkdocs build"
+docs-serve = "mkdocs serve --dev-addr 0.0.0.0:8000"
