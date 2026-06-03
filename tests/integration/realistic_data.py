@@ -10,8 +10,11 @@ from __future__ import annotations
 
 from datetime import date
 from itertools import cycle, islice
+from typing import cast
 
 import polars as pl
+from pandera.typing.polars import LazyFrame
+from schenberg.domain.schemas import SwapInput
 from schenberg.market_data.snapshot import MarketSnapshot
 from schenberg.market_data.sources import MarketSource
 
@@ -65,27 +68,30 @@ def make_market(*, zero_rate: float = 0.10, slope: float = 0.005) -> MarketSnaps
     )
 
 
-def make_swaps(n: int) -> pl.LazyFrame:
+def make_swaps(n: int) -> LazyFrame[SwapInput]:
     """``n`` CDI-vs-IPCA swaps, deterministically spread across tenors/notionals."""
     tenors = list(islice(cycle(TENORS), n))
     notionals = list(islice(cycle(NOTIONALS), n))
-    return pl.DataFrame(
-        {
-            "swap_id": [f"SWP-{i:06d}" for i in range(n)],
-            "notional": notionals,
-            "id_indexador_ativo": [CDI] * n,
-            "id_indexador_passivo": [IPCA] * n,
-            "indexador_kind_ativo": ["CDI"] * n,
-            "indexador_kind_passivo": ["IPCA"] * n,
-            "payment_days": tenors,
-            "accrual": [t / 252.0 for t in tenors],
-            "base_date": [AS_OF] * n,
-            "fixed_rate_ativo": [None] * n,
-            "fixed_rate_passivo": [None] * n,
-            "real_coupon_ativo": [None] * n,
-            "real_coupon_passivo": [0.02] * n,
-        }
-    ).lazy()
+    return cast(
+        LazyFrame[SwapInput],
+        pl.DataFrame(
+            {
+                "swap_id": [f"SWP-{i:06d}" for i in range(n)],
+                "notional": notionals,
+                "id_indexador_ativo": [CDI] * n,
+                "id_indexador_passivo": [IPCA] * n,
+                "indexador_kind_ativo": ["CDI"] * n,
+                "indexador_kind_passivo": ["IPCA"] * n,
+                "payment_days": tenors,
+                "accrual": [t / 252.0 for t in tenors],
+                "base_date": [AS_OF] * n,
+                "fixed_rate_ativo": [None] * n,
+                "fixed_rate_passivo": [None] * n,
+                "real_coupon_ativo": [None] * n,
+                "real_coupon_passivo": [0.02] * n,
+            }
+        ).lazy(),
+    )
 
 
 def make_positions(swap_ids: list[str]) -> pl.LazyFrame:

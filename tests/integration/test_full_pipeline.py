@@ -11,8 +11,6 @@ from typing import cast
 
 import polars as pl
 import pytest
-from pandera.typing.polars import LazyFrame
-from schenberg.domain.schemas import SwapInput
 from schenberg.pricing.portfolio import (
     bump_curve,
     compute_dv01,
@@ -30,7 +28,7 @@ def book():
     swaps = make_swaps(CATALOG_SIZE)
     swap_ids = cast(pl.DataFrame, swaps.select("swap_id").collect())["swap_id"].to_list()
     positions = make_positions(swap_ids)
-    value = make_valuer(cast(LazyFrame[SwapInput], swaps))
+    value = make_valuer(swaps)
     return positions, value
 
 
@@ -48,7 +46,7 @@ def test_book_pnl_reconciles_to_position_level(book) -> None:
     # independent reconciliation: sum of book PnL == sum of position mv moves
     mv_today = cast(pl.DataFrame, value(positions, today).collect())["market_value"].sum()
     mv_prev = cast(pl.DataFrame, value(positions, prev).collect())["market_value"].sum()
-    assert report["pnl"].sum() == pytest.approx(mv_today - mv_prev, rel=1e-9)
+    assert report["pnl"].sum() == pytest.approx(float(mv_today) - float(mv_prev), rel=1e-9)
 
 
 def test_parallel_dv01_is_consistent_and_roughly_linear(book) -> None:
@@ -73,10 +71,10 @@ def test_parallel_dv01_is_consistent_and_roughly_linear(book) -> None:
     bumped_mv = cast(pl.DataFrame, value(positions, bump_curve(market, 0.0001)).collect())[
         "market_value"
     ].sum()
-    assert one_bp["dv01"].sum() == pytest.approx(bumped_mv - base_mv, rel=1e-9)
+    assert one_bp["dv01"].sum() == pytest.approx(float(bumped_mv) - float(base_mv), rel=1e-9)
 
     # a 2bp parallel shift moves PV ~2x a 1bp shift (convexity is tiny at this scale)
-    assert two_bp["dv01"].sum() == pytest.approx(2.0 * one_bp["dv01"].sum(), rel=0.02)
+    assert two_bp["dv01"].sum() == pytest.approx(2.0 * float(one_bp["dv01"].sum()), rel=0.02)
 
 
 def test_pipeline_stays_lazy_until_collect(book) -> None:

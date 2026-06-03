@@ -26,7 +26,7 @@ class Pipe:
 
     def stage(self, fn: Callable[..., Any]) -> Callable[..., Any]:
         """Decorator. Register a stage; its parameter names are its deps."""
-        self._fns[fn.__name__] = (fn, tuple(signature(fn).parameters))
+        self._fns[fn.__name__] = (fn, tuple(signature(fn).parameters))  # ty: ignore[unresolved-attribute]
         self._order = None
         return fn
 

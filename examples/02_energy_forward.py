@@ -12,8 +12,11 @@ to the reporting currency via FX. The math graph never mentions "energy".
 from __future__ import annotations
 
 from datetime import date
+from typing import cast
 
 import polars as pl
+from pandera.typing.polars import LazyFrame
+from schenberg.domain.schemas import EnergyForwardLeg
 from schenberg.market_data.snapshot import MarketSnapshot
 from schenberg.market_data.sources import MarketSource
 from schenberg.pricing.instruments.forward.energy import price_energy_forward
@@ -48,19 +51,22 @@ market = MarketSnapshot.from_sources(
 )
 
 # One instrument (ENG-1) delivering across two monthly periods -> two legs.
-legs = pl.DataFrame(
-    {
-        "instrument_id": ["ENG-1", "ENG-1"],
-        "instrument_type": ["FORWARD", "FORWARD"],
-        "forward_family": ["ENERGY", "ENERGY"],
-        "settlement_type": ["PHYSICAL", "PHYSICAL"],
-        "submarket": ["SE", "SE"],
-        "delivery_period": ["2026-07", "2026-08"],
-        "id_indexador": [1, 1],
-        "payment_days": [30, 60],
-        "strike": [100.0, 100.0],
-        "currency": ["BRL", "BRL"],
-    }
-).lazy()
+legs = cast(
+    LazyFrame[EnergyForwardLeg],
+    pl.DataFrame(
+        {
+            "instrument_id": ["ENG-1", "ENG-1"],
+            "instrument_type": ["FORWARD", "FORWARD"],
+            "forward_family": ["ENERGY", "ENERGY"],
+            "settlement_type": ["PHYSICAL", "PHYSICAL"],
+            "submarket": ["SE", "SE"],
+            "delivery_period": ["2026-07", "2026-08"],
+            "id_indexador": [1, 1],
+            "payment_days": [30, 60],
+            "strike": [100.0, 100.0],
+            "currency": ["BRL", "BRL"],
+        }
+    ).lazy(),
+)
 
 print(price_energy_forward(legs, market).collect())
