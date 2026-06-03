@@ -23,11 +23,6 @@ class SettlementType(StrEnum):
     CASH_SETTLED = "CASH_SETTLED"
 
 
-class BuySell(StrEnum):
-    BUY = "BUY"
-    SELL = "SELL"
-
-
 class OptionModel(StrEnum):
     """How the cost of carry ``b`` in the generalized BSM formula is formed.
 
@@ -44,8 +39,10 @@ class OptionKind(StrEnum):
     PUT = "PUT"
 
 
-class GreekMethod(StrEnum):
-    ANALYTIC = "ANALYTIC"  # closed-form partials
+class GreeksBackend(StrEnum):
+    """How the option Greeks are computed; the user picks one."""
+
+    CLOSED_FORM = "CLOSED_FORM"  # analytic partials
     NUMERIC = "NUMERIC"  # central finite differences
     AUTODIFF = "AUTODIFF"  # autograd reverse-mode AD
 

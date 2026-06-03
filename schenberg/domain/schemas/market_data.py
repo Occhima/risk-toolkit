@@ -37,19 +37,3 @@ class VolSurfaceContract(DataFrameModel):
     tenor_days: int
     strike: float
     implied_vol: float
-
-
-class CarryCurveContract(DataFrameModel):
-    """Cost-of-carry ``b`` by underlying and tenor (the generalized BSM knob)."""
-
-    id_indexador: int
-    tenor_days: int
-    cost_of_carry: float
-
-
-class DividendCurveContract(DataFrameModel):
-    """Continuous dividend yield ``q`` by underlying and tenor (Merton ``b = r - q``)."""
-
-    id_indexador: int
-    tenor_days: int
-    div_yield: float

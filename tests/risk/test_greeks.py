@@ -2,8 +2,14 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from schenberg.risk.greeks import GREEK_NAMES, compute_greeks
-from schenberg.risk.greeks.analytic import greeks_analytic
+from schenberg.domain.schemas.option import OptionGreeks
+from schenberg.math.black_scholes import GREEK_NAMES, greeks_analytic
+from schenberg.risk.greeks import GreeksBackend, GreeksEngine
+
+
+def compute_greeks(*, backend, **kwargs):
+    return GreeksEngine(GreeksBackend(backend)).compute(**kwargs)
+
 
 # A spread of moneyness, carries and maturities — calls and puts.
 SPOT = np.array([100.0, 100.0, 80.0, 120.0, 100.0, 100.0])
@@ -19,9 +25,9 @@ PUT = -np.ones(6)
 @pytest.mark.parametrize("eta", [CALL, PUT], ids=["call", "put"])
 def test_three_methods_reconcile(eta) -> None:
     args = dict(spot=SPOT, strike=STRIKE, rate=RATE, carry=CARRY, vol=VOL, ttm=TTM, eta=eta)
-    analytic = compute_greeks(method="ANALYTIC", **args)
-    numeric = compute_greeks(method="NUMERIC", **args)
-    autodiff = compute_greeks(method="AUTODIFF", **args)
+    analytic = compute_greeks(backend="CLOSED_FORM", **args)
+    numeric = compute_greeks(backend="NUMERIC", **args)
+    autodiff = compute_greeks(backend="AUTODIFF", **args)
 
     for name in GREEK_NAMES:
         # closed-form and AD share the exact Gaussian -> agree to ~1e-9
@@ -32,7 +38,7 @@ def test_three_methods_reconcile(eta) -> None:
 
 def test_greek_signs_are_sane() -> None:
     call = compute_greeks(
-        method="ANALYTIC",
+        backend="CLOSED_FORM",
         spot=SPOT,
         strike=STRIKE,
         rate=RATE,
@@ -42,7 +48,7 @@ def test_greek_signs_are_sane() -> None:
         eta=CALL,
     )
     put = compute_greeks(
-        method="ANALYTIC",
+        backend="CLOSED_FORM",
         spot=SPOT,
         strike=STRIKE,
         rate=RATE,
@@ -67,6 +73,12 @@ def test_delta_difference_equals_carry_discount_factor() -> None:
 
 def test_scalar_inputs_work() -> None:
     g = compute_greeks(
-        method="AUTODIFF", spot=100.0, strike=100.0, rate=0.1, carry=0.1, vol=0.2, ttm=1.0, eta=1.0
+        backend="AUTODIFF", spot=100.0, strike=100.0, rate=0.1, carry=0.1, vol=0.2, ttm=1.0, eta=1.0
     )
     assert float(g["delta"]) == pytest.approx(0.7257468822, abs=1e-7)
+
+
+def test_greek_names_match_the_contract() -> None:
+    # The computation layer's names and the OptionGreeks boundary contract must
+    # stay in lockstep — both backends key their output off this.
+    assert tuple(OptionGreeks.to_schema().columns.keys()) == GREEK_NAMES

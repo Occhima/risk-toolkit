@@ -30,6 +30,11 @@ class OptionPricing(DataFrameModel):
 
 
 class OptionGreeks(DataFrameModel):
+    """Risk output contract: the five sensitivities attached to a priced option.
+
+    Field order is the canonical Greek order shared with the computation layer
+    (:data:`schenberg.math.black_scholes.GREEK_NAMES`)."""
+
     delta: float
     gamma: float
     vega: float

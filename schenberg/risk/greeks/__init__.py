@@ -1,94 +1,105 @@
-"""Greeks for generalized BSM options, three ways, plus a lazy Polars bridge.
+"""Option Greeks — three backends behind one contract.
 
-* :func:`compute_greeks` — numpy in, dict-of-arrays out, dispatched over
-  ``analytic`` / ``numeric`` / ``autodiff``. All three share one price model
-  (:mod:`.model`) so they reconcile.
-* :func:`attach_greeks` — a vectorized (``map_batches``, no row-wise UDF) step
-  that adds ``delta, gamma, vega, theta, rho`` columns to a priced lazy frame.
+* ``CLOSED_FORM`` is graph-native: :data:`bsm_greeks_graph` composes onto the
+  option pricing graph and the Greeks fall out as ordinary Polars expressions
+  (no Python callback). This is what the option pricer uses by default.
+* ``NUMERIC`` and ``AUTODIFF`` cannot be Polars expressions (they bump / reverse-
+  mode differentiate the numpy price model), so :class:`GreeksEngine` bridges the
+  numpy kernels in :mod:`schenberg.math.black_scholes` onto a lazy frame via a
+  single vectorized ``map_batches``.
+
+All three emit the :class:`OptionGreeks` columns and reconcile, because they
+share one price model.
 """
 
 from __future__ import annotations
 
-import numpy as np
-import polars as pl
-from numpy.typing import NDArray
+from dataclasses import dataclass
 
-from schenberg.domain.enums import GreekMethod, OptionKind
-from schenberg.risk.greeks.analytic import greeks_analytic
-from schenberg.risk.greeks.autodiff import greeks_autodiff
-from schenberg.risk.greeks.model import generalized_price
-from schenberg.risk.greeks.numeric import greeks_numeric
+import polars as pl
+
+from schenberg.domain.enums import GreeksBackend, OptionKind
+from schenberg.domain.schemas.option import OptionGreeks
+from schenberg.math.black_scholes import (
+    GREEK_NAMES,
+    Greeks,
+    greeks_analytic,
+    greeks_autodiff,
+    greeks_numeric,
+)
+from schenberg.risk.greeks.graph import bsm_greeks_graph
 
 __all__ = [
     "GREEK_NAMES",
-    "attach_greeks",
-    "compute_greeks",
-    "generalized_price",
+    "GreeksBackend",
+    "GreeksEngine",
+    "bsm_greeks_graph",
 ]
 
-GREEK_NAMES = ("delta", "gamma", "vega", "theta", "rho")
-
-_ENGINES = {
-    GreekMethod.ANALYTIC: greeks_analytic,
-    GreekMethod.NUMERIC: greeks_numeric,
-    GreekMethod.AUTODIFF: greeks_autodiff,
+_KERNELS = {
+    GreeksBackend.CLOSED_FORM: greeks_analytic,
+    GreeksBackend.NUMERIC: greeks_numeric,
+    GreeksBackend.AUTODIFF: greeks_autodiff,
 }
 
-
-def compute_greeks(
-    *,
-    method: GreekMethod | str,
-    spot,
-    strike,
-    rate,
-    carry,
-    vol,
-    ttm,
-    eta,
-) -> dict[str, NDArray[np.float64]]:
-    """Dispatch to one of the three engines. ``eta`` is +1 call / -1 put."""
-    return _ENGINES[GreekMethod(method)](spot, strike, rate, carry, vol, ttm, eta)
+# Output columns driven by the contract, so frame and schema cannot drift.
+_GREEK_COLUMNS = tuple(OptionGreeks.to_schema().columns.keys())
 
 
-def _eta_expr(kind_col: str) -> pl.Expr:
-    return pl.when(pl.col(kind_col) == OptionKind.CALL).then(1.0).otherwise(-1.0)
+@dataclass(frozen=True, slots=True)
+class GreeksEngine:
+    """The numpy Greek engine: choose a backend once, reuse it.
 
-
-def attach_greeks(
-    lf: pl.LazyFrame,
-    *,
-    method: GreekMethod | str = GreekMethod.ANALYTIC,
-    kind_col: str = "option_kind",
-    carry_col: str = "cost_of_carry",
-    ttm_col: str = "ttm",
-) -> pl.LazyFrame:
-    """Add the five Greek columns to a priced frame — stays lazy.
-
-    Expects the inputs the pricing graph already surfaced: ``spot``, ``strike``,
-    ``rate``, the cost of carry, ``vol`` and a time-to-maturity column.
+    Serves the ``NUMERIC`` / ``AUTODIFF`` backends on lazy frames and the
+    one-shot numpy ``compute`` (the reconciliation reference for all three).
     """
-    fields = ["spot", "strike", "rate", carry_col, "vol", ttm_col, "_eta"]
-    struct_dtype = pl.Struct({name: pl.Float64 for name in GREEK_NAMES})
 
-    def run(s: pl.Series) -> pl.Series:
-        col = {f: s.struct.field(f).to_numpy() for f in fields}
-        greeks = compute_greeks(
-            method=method,
-            spot=col["spot"],
-            strike=col["strike"],
-            rate=col["rate"],
-            carry=col[carry_col],
-            vol=col["vol"],
-            ttm=col[ttm_col],
-            eta=col["_eta"],
-        )
-        return pl.DataFrame({name: greeks[name] for name in GREEK_NAMES}).to_struct()
+    backend: GreeksBackend = GreeksBackend.CLOSED_FORM
 
-    return (
-        lf.with_columns(_eta_expr(kind_col).alias("_eta"))
-        .with_columns(
-            pl.struct(fields).map_batches(run, return_dtype=struct_dtype).alias("_greeks")
+    def compute(self, *, spot, strike, rate, carry, vol, ttm, eta) -> Greeks:
+        """Run the chosen kernel: numpy in, dict-of-arrays out. ``eta`` is +1/-1."""
+        return _KERNELS[self.backend](spot, strike, rate, carry, vol, ttm, eta)
+
+    def attach(
+        self,
+        lf: pl.LazyFrame,
+        *,
+        kind_col: str = "option_kind",
+        carry_col: str = "cost_of_carry",
+        ttm_col: str = "ttm",
+    ) -> pl.LazyFrame:
+        """Add the :class:`OptionGreeks` columns to a priced frame — stays lazy.
+
+        Expects the columns the pricing graph already surfaced: ``spot``,
+        ``strike``, ``rate``, the cost of carry, ``vol`` and a time-to-maturity.
+        Vectorized via ``map_batches`` — never a row-wise UDF.
+        """
+        fields = ["spot", "strike", "rate", carry_col, "vol", ttm_col, "_eta"]
+        struct_dtype = pl.Struct({name: pl.Float64 for name in _GREEK_COLUMNS})
+
+        def run(s: pl.Series) -> pl.Series:
+            col = {f: s.struct.field(f).to_numpy() for f in fields}
+            greeks = self.compute(
+                spot=col["spot"],
+                strike=col["strike"],
+                rate=col["rate"],
+                carry=col[carry_col],
+                vol=col["vol"],
+                ttm=col[ttm_col],
+                eta=col["_eta"],
+            )
+            return pl.DataFrame({name: greeks[name] for name in _GREEK_COLUMNS}).to_struct()
+
+        return (
+            lf.with_columns(
+                pl.when(pl.col(kind_col) == OptionKind.CALL.value)
+                .then(1.0)
+                .otherwise(-1.0)
+                .alias("_eta")
+            )
+            .with_columns(
+                pl.struct(fields).map_batches(run, return_dtype=struct_dtype).alias("_greeks")
+            )
+            .drop("_eta")
+            .unnest("_greeks")
         )
-        .drop("_eta")
-        .unnest("_greeks")
-    )

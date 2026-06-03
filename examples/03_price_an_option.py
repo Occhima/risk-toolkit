@@ -7,7 +7,7 @@ The market carries an implied-vol *surface* (quoted on a tenor x strike grid);
 through the generalized BSM graph. GENERALIZED takes the cost of carry ``b``
 straight from a curve; MERTON derives it as ``b = r - q`` from a dividend curve.
 ``price_options_with_greeks`` then attaches delta/gamma/vega/theta/rho — here via
-autograd, but ``method="ANALYTIC"`` or ``"NUMERIC"`` give the same numbers.
+autograd, but ``backend="CLOSED_FORM"`` or ``"NUMERIC"`` give the same numbers.
 Everything stays lazy until ``.collect()``.
 """
 
@@ -25,9 +25,7 @@ STRIKES = [90.0, 100.0, 110.0]
 
 
 def _flat_curve(col: str, value: float) -> pl.LazyFrame:
-    return pl.DataFrame(
-        {"id_indexador": [1] * 3, "tenor_days": TENORS, col: [value] * 3}
-    ).lazy()
+    return pl.DataFrame({"id_indexador": [1] * 3, "tenor_days": TENORS, col: [value] * 3}).lazy()
 
 
 # --- Market: a vol surface, a discount curve, a carry curve and dividends --------
@@ -65,7 +63,7 @@ options = pl.DataFrame(
     }
 ).lazy()
 
-result = price_options_with_greeks(options, market, method="AUTODIFF").select(
+result = price_options_with_greeks(options, market, backend="AUTODIFF").select(
     "option_id", "vol", "price", "delta", "gamma", "vega", "theta", "rho"
 )
 with pl.Config(tbl_width_chars=200, float_precision=4):

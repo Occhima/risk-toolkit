@@ -15,27 +15,11 @@ how ``cost_of_carry`` is supplied — see :mod:`.models`.
 
 from __future__ import annotations
 
-import math
-
 import polars as pl
 
 from schenberg.core.graph import ExprGraph
 from schenberg.domain.schemas.option import OptionPricing
-from schenberg.math.expressions import year_fraction_252_expr
-
-
-def norm_cdf(x: pl.Expr) -> pl.Expr:
-    """Standard normal CDF, Abramowitz & Stegun 26.2.17 — vectorized, pure
-    Polars, no map_elements (~7.5e-8 abs error). N(x) = 1 - N(-x)."""
-    ax = x.abs()
-    t = 1.0 / (1.0 + 0.2316419 * ax)
-    poly = t * (
-        0.319381530 + t * (-0.356563782 + t * (1.781477937 + t * (-1.821255978 + t * 1.330274429)))
-    )
-    pdf = (-(ax * ax) / 2.0).exp() / math.sqrt(2.0 * math.pi)
-    cdf_pos = 1.0 - pdf * poly
-    return pl.when(x >= 0).then(cdf_pos).otherwise(1.0 - cdf_pos)
-
+from schenberg.math.expressions import norm_cdf_expr, year_fraction_252_expr
 
 generalized_bsm_core = ExprGraph("generalized_bsm_core")
 
@@ -73,12 +57,12 @@ def disc_strike(strike: pl.Expr, rate: pl.Expr, year_fraction: pl.Expr) -> pl.Ex
 
 @generalized_bsm_core.node(tags=("bsm", "call"), description="Generalized BSM call price.")
 def call_price(carry_spot: pl.Expr, d1: pl.Expr, disc_strike: pl.Expr, d2: pl.Expr) -> pl.Expr:
-    return carry_spot * norm_cdf(d1) - disc_strike * norm_cdf(d2)
+    return carry_spot * norm_cdf_expr(d1) - disc_strike * norm_cdf_expr(d2)
 
 
 @generalized_bsm_core.node(tags=("bsm", "put"), description="Generalized BSM put price.")
 def put_price(carry_spot: pl.Expr, d1: pl.Expr, disc_strike: pl.Expr, d2: pl.Expr) -> pl.Expr:
-    return disc_strike * norm_cdf(-d2) - carry_spot * norm_cdf(-d1)
+    return disc_strike * norm_cdf_expr(-d2) - carry_spot * norm_cdf_expr(-d1)
 
 
 generalized_bsm_core.with_outputs("pricing", OptionPricing)
