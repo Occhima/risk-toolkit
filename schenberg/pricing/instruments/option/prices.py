@@ -12,8 +12,8 @@ import polars as pl
 from schenberg.domain.enums import GreekMethod
 from schenberg.market_data.snapshot import MarketSnapshot
 from schenberg.market_data.volatility import VolSurface
-from schenberg.pricing.greeks import attach_greeks
 from schenberg.pricing.instruments.option.models import option_router
+from schenberg.risk.greeks import attach_greeks
 
 _DAYS_PER_YEAR = 252.0
 
