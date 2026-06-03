@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  check:
+    name: ${{ matrix.job }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        job: [format, lint, typecheck, test, integration]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: uv sync --all-groups
+
+      - name: format
+        if: matrix.job == 'format'
+        run: uv run ruff format --check .
+
+      - name: lint
+        if: matrix.job == 'lint'
+        run: uv run ruff check .
+
+      - name: typecheck
+        if: matrix.job == 'typecheck'
+        run: uv run ty check
+
+      - name: test
+        if: matrix.job == 'test'
+        run: uv run pytest tests/ -m "not performance" -q
+
+      - name: integration
+        if: matrix.job == 'integration'
+        run: uv run pytest tests/integration -m "not performance" -q

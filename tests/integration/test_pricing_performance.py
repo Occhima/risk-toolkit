@@ -6,7 +6,7 @@ throughput, and asserts the largest book stays under a generous wall-clock
 budget so a perf regression shows up in CI.
 
 Run just this file with timing output:
-    uv run pytest integration/test_pricing_performance.py -m performance -s
+    uv run pytest tests/integration/test_pricing_performance.py -m performance -s
 """
 
 from __future__ import annotations

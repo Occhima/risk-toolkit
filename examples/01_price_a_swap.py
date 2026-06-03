@@ -11,8 +11,11 @@ Everything stays lazy until ``.collect()``.
 from __future__ import annotations
 
 from datetime import date
+from typing import cast
 
 import polars as pl
+from pandera.typing.polars import LazyFrame
+from schenberg.domain.schemas import SwapInput
 from schenberg.market_data.snapshot import MarketSnapshot
 from schenberg.market_data.sources import MarketSource
 from schenberg.pricing.api import price_swap
@@ -48,23 +51,26 @@ market = MarketSnapshot.from_sources(
 )
 
 # --- One swap: receive CDI (ativo), pay IPCA+coupon (passivo) --------------------
-swaps = pl.DataFrame(
-    {
-        "swap_id": ["SWP-1"],
-        "notional": [1_000_000.0],
-        "id_indexador_ativo": [1],
-        "id_indexador_passivo": [2],
-        "indexador_kind_ativo": ["CDI"],
-        "indexador_kind_passivo": ["IPCA"],
-        "payment_days": [252],
-        "accrual": [1.0],
-        "base_date": [date(2026, 6, 3)],
-        "fixed_rate_ativo": [None],
-        "fixed_rate_passivo": [None],
-        "real_coupon_ativo": [None],
-        "real_coupon_passivo": [0.02],
-    }
-).lazy()
+swaps = cast(
+    LazyFrame[SwapInput],
+    pl.DataFrame(
+        {
+            "swap_id": ["SWP-1"],
+            "notional": [1_000_000.0],
+            "id_indexador_ativo": [1],
+            "id_indexador_passivo": [2],
+            "indexador_kind_ativo": ["CDI"],
+            "indexador_kind_passivo": ["IPCA"],
+            "payment_days": [252],
+            "accrual": [1.0],
+            "base_date": [date(2026, 6, 3)],
+            "fixed_rate_ativo": [None],
+            "fixed_rate_passivo": [None],
+            "real_coupon_ativo": [None],
+            "real_coupon_passivo": [0.02],
+        }
+    ).lazy(),
+)
 
 result = price_swap(swaps, market).collect()
 print(result)
