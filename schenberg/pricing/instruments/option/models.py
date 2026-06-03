@@ -121,9 +121,7 @@ generalized_put_with_greeks = _greeks_leaf(
 merton_call_with_greeks = _greeks_leaf(
     "merton_call_with_greeks", merton_call, price_node="call_price"
 )
-merton_put_with_greeks = _greeks_leaf(
-    "merton_put_with_greeks", merton_put, price_node="put_price"
-)
+merton_put_with_greeks = _greeks_leaf("merton_put_with_greeks", merton_put, price_node="put_price")
 
 # Every (model, kind) routes to a price-only leaf and a price+Greeks leaf. The
 # table is the single source of truth; both routers are built from it.

@@ -387,9 +387,7 @@ class ExprGraph:
         output_profile: str | None = None,
     ) -> str:
         output_nodes = (
-            set(self._output_profiles.get(output_profile, {}).values())
-            if output_profile
-            else set()
+            set(self._output_profiles.get(output_profile, {}).values()) if output_profile else set()
         )
 
         def label(name: str) -> str:

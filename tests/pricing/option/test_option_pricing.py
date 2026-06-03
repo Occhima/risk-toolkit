@@ -6,8 +6,8 @@ from typing import cast
 import polars as pl
 import pytest
 from schenberg.core.graph import ExprGraph
+from schenberg.market_data.interpolated import InterpolatedBook
 from schenberg.market_data.sources import MarketSource
-from schenberg.market_data.volatility import VolSurface
 from schenberg.pricing.instruments.option import price_options, price_options_with_greeks
 from schenberg.pricing.instruments.option.models import option_price_router, option_router
 
@@ -62,12 +62,17 @@ def test_merton_equals_generalized_with_carry_minus_dividend(option_inputs, opti
 
 
 def test_vol_is_interpolated_off_the_surface(option_market) -> None:
-    surface = VolSurface.from_quotes(option_market.source("vol_surface").data)
+    book = InterpolatedBook.from_quotes(
+        option_market.source("vol_surface").data,
+        group_col="id_indexador",
+        axis_cols=("tenor_days", "strike"),
+        value_col="implied_vol",
+    )
     # on a grid node: exact quote (252d, K=100) = 0.20
-    assert surface.implied_vol(1.0, 100.0)[0] == pytest.approx(0.20)
+    assert book.interpolate([1], [252], [100.0])[0] == pytest.approx(0.20)
     # between tenors and strikes: strictly inside the bracketing quotes (all 0.19..0.25)
     surface_lo, surface_hi = 0.19, 0.25
-    v = surface.implied_vol(0.75, 95.0)[0]
+    v = book.interpolate([1], [189], [95.0])[0]
     assert surface_lo < v < surface_hi
 
 

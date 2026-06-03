@@ -8,6 +8,7 @@ import pytest
 from schenberg.core.columns import ColumnSet
 from schenberg.core.market import curve, fixing
 from schenberg.domain.schemas.market_data import VolSurfaceContract
+from schenberg.market_data.interpolated import InterpolatedSpec
 from schenberg.market_data.snapshot import MarketSnapshot
 from schenberg.market_data.sources import MarketSource
 from schenberg.market_data.volatility import VolSurfaces, VolSurfaceSpec
@@ -83,6 +84,30 @@ def test_vol_surface_requirement_attaches_by_indexer_tenor_and_strike() -> None:
     assert out["vol"].to_list() == [0.20, 0.30]
 
 
+def test_interpolated_spec_attaches_a_1d_curve_between_quoted_tenors() -> None:
+    # The same machine behind the vol surface declares a plain interpolated curve:
+    # one ascending axis (tenor), linear in between, clamped at the edges.
+    quotes = pl.DataFrame(
+        {
+            "id_indexador": [1, 1, 1],
+            "tenor_days": [126, 252, 504],
+            "zero_rate": [0.10, 0.12, 0.16],
+        }
+    ).lazy()
+    snapshot = MarketSnapshot.from_sources(
+        as_of=date(2026, 6, 3), sources=[MarketSource("rates_curve", quotes)]
+    )
+    req = InterpolatedSpec("rates_curve", axes=("tenor_days",)).value(
+        "zero_rate", output="rate", on=("payment_days",)
+    )
+    trades = pl.DataFrame({"id_indexador": [1, 1], "payment_days": [189, 999]}).lazy()
+
+    out = cast(pl.DataFrame, snapshot.attach(trades, req).collect())
+
+    # 189 sits halfway between 126 and 252 -> midpoint of 0.10 and 0.12; 999 clamps to 0.16.
+    assert out["rate"].to_list() == pytest.approx([0.11, 0.16])
+
+
 def test_vol_surface_requirement_unknown_indexer_raises() -> None:
     quotes = pl.DataFrame(
         {
@@ -99,5 +124,5 @@ def test_vol_surface_requirement_unknown_indexer_raises() -> None:
 
     attached = snapshot.attach(trades, VolSurfaceSpec().implied_vol(output="vol"))
 
-    with pytest.raises(ValueError, match="unknown id_indexador"):
+    with pytest.raises(ValueError, match="unknown group"):
         attached.collect()
