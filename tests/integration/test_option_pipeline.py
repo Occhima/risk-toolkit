@@ -14,7 +14,7 @@ import polars as pl
 import pytest
 from schenberg.math.black_scholes import GREEK_NAMES, generalized_price
 from schenberg.pricing.instruments.option import price_options_with_greeks
-from schenberg.pricing.instruments.option.models import option_greeks_router, option_price_router
+from schenberg.pricing.instruments.option.models import option_price_router, option_risk_router
 
 from .option_data import make_market, make_options
 
@@ -32,9 +32,7 @@ def test_graph_price_reconciles_to_numpy_model(book) -> None:
     options, market = book
     state = cast(
         pl.DataFrame,
-        option_price_router.compute_for(
-            options, market=market, output_profile="priced_state"
-        ).collect(),
+        option_price_router.compute(options, market=market, view="state").collect(),
     )
 
     independent = generalized_price(
@@ -67,9 +65,7 @@ def test_book_respects_put_call_parity(book) -> None:
     options, market = book
     df = cast(
         pl.DataFrame,
-        option_price_router.compute_for(
-            options, market=market, output_profile="priced_state"
-        ).collect(),
+        option_price_router.compute(options, market=market, view="state").collect(),
     )
     # pair each call with its put (same model, strike, maturity) and check
     # C - P = S e^{(b-r)T} - K e^{-rT}.
@@ -93,9 +89,7 @@ def test_risk_columns_have_sane_signs(book) -> None:
     options, market = book
     df = cast(
         pl.DataFrame,
-        option_greeks_router.compute_for(
-            options, market=market, output_profile="price_with_greeks"
-        ).collect(),
+        option_risk_router.compute(options, market=market, view="risk").collect(),
     )
     assert (df["gamma"].to_numpy() > 0).all()
     assert (df["vega"].to_numpy() > 0).all()

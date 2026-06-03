@@ -21,5 +21,5 @@ def price_inflation_energy(legs: pl.LazyFrame, market: MarketSnapshot) -> pl.Laz
     tenor_date, payment_days, forward_price, strike, currency.
     """
     prepared = add_reference_date(legs)
-    priced = inflation_energy_graph.compute_for(prepared, market=market, output_profile="pricing")
+    priced = inflation_energy_graph.compute(prepared, market=market, view="pricing")
     return priced.group_by("instrument_id").agg(price=pl.col("value").sum())

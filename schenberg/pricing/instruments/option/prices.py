@@ -21,7 +21,7 @@ from schenberg.domain.schemas.option import (
     OptionTrade,
 )
 from schenberg.market_data.snapshot import MarketSnapshot
-from schenberg.pricing.instruments.option.models import option_greeks_router, option_price_router
+from schenberg.pricing.instruments.option.models import option_price_router, option_risk_router
 from schenberg.risk.greeks import GreeksEngine
 
 STATE = cols(OptionPricedState)
@@ -35,7 +35,7 @@ def price_options(
     market: MarketSnapshot,
 ) -> LazyFrame[OptionPrice]:
     """Price a book of options and return the public price contract."""
-    priced = option_price_router.compute_for(options, market=market, output_profile="price")
+    priced = option_price_router.compute(options, market=market, view="price")
     result = priced.select(
         PRICE.option_id.name,
         PRICE.instrument_type.name,
@@ -48,10 +48,10 @@ def _price_option_state(
     options: LazyFrame[OptionTrade],
     market: MarketSnapshot,
 ) -> LazyFrame[OptionPricedState]:
-    priced = option_price_router.compute_for(
+    priced = option_price_router.compute(
         options,
         market=market,
-        output_profile="priced_state",
+        view="state",
     )
     result = priced.select(
         STATE.option_id.name,
@@ -83,10 +83,10 @@ def price_options_with_greeks(
     """Price a book of options and attach delta, gamma, vega, theta and rho."""
     backend = GreeksBackend(backend)
     if backend is GreeksBackend.CLOSED_FORM:
-        priced = option_greeks_router.compute_for(
+        priced = option_risk_router.compute(
             options,
             market=market,
-            output_profile="price_with_greeks",
+            view="risk",
         )
     else:
         state = _price_option_state(options, market)

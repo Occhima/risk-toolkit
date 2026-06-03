@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 import polars as pl
 
@@ -30,6 +31,23 @@ class MarketDependency(Protocol):
     def right_keys(self) -> tuple[str, ...]: ...
 
     def attach(self, lf: pl.LazyFrame, snapshot: MarketSnapshot) -> pl.LazyFrame: ...
+
+
+@dataclass(frozen=True, slots=True)
+class MarketRead:
+    """A market read whose output column is not yet decided.
+
+    Market specs return a ``MarketRead`` when no ``output`` is passed: the read
+    knows its source and join keys but waits for ``FormulaGraph.for_market`` to
+    name the output column from the keyword it is bound to::
+
+        graph.for_market(rate=CURVES.value("zero_rate", ...))  # -> output "rate"
+    """
+
+    build: Callable[[str], Any]
+
+    def as_output(self, output: str) -> MarketDependency:
+        return self.build(output)
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,53 +80,3 @@ class MarketRequirement:
             right_on=list(self.right_keys),
             how="left",
         )
-
-
-# Requirement helpers for the swap legs. New market-data specs live under
-# schenberg.market_data.* and should be preferred for new instruments.
-def curve(
-    *identity: str,
-    indexer_col: str = "id_indexador",
-    tenor_col: str = "payment_days",
-    outputs: dict[str, str] | None = None,
-) -> MarketRequirement:
-    out = {name: name for name in identity}
-    if outputs:
-        out.update(outputs)
-    return MarketRequirement(
-        table="curves",
-        on=ColumnSet.from_pairs(
-            (indexer_col, "id_indexador"),
-            (tenor_col, "tenor_days"),
-        ),
-        outputs=out,
-    )
-
-
-def fixing(
-    *, indexer_col: str = "id_indexador", date_col: str = "base_date", output: str = "base_index"
-) -> MarketRequirement:
-    return MarketRequirement(
-        table="fixings",
-        on=ColumnSet.from_pairs(
-            (indexer_col, "id_indexador"),
-            (date_col, "fixing_date"),
-        ),
-        outputs={"fixing_value": output},
-    )
-
-
-def projected_index(
-    *,
-    indexer_col: str = "id_indexador",
-    tenor_col: str = "payment_days",
-    output: str = "projected_index",
-) -> MarketRequirement:
-    return MarketRequirement(
-        table="projected_indexes",
-        on=ColumnSet.from_pairs(
-            (indexer_col, "id_indexador"),
-            (tenor_col, "tenor_days"),
-        ),
-        outputs={"projected_index": output},
-    )

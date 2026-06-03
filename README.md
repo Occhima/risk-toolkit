@@ -54,12 +54,12 @@ A full, runnable version of this is [`examples/01_price_a_swap.py`](examples/01_
 
 ## Why a graph
 
-- **Declarative formulas.** A node's parameter names *are* its dependencies —
+- **Declarative formulas.** A formula's parameter names *are* its dependencies —
   no manual wiring. The engine handles topological order, cycle checks, and a
   shared compile cache.
 - **Lazy by construction.** Nothing in the engine calls `.collect()`; a whole
   pricing run is one Polars query you execute once, at the edge.
-- **Composable.** `compose()` merges graphs; `Router` dispatches heterogeneous
+- **Composable.** `compose_with()` merges graphs; `Router` dispatches heterogeneous
   instruments; `MarketSnapshot` attaches curves/fixings/FX by declarative joins.
 - **Typed at the boundary, fast inside.** Pandera contracts guard the public
   edges; the hot path stays plain Polars expressions.
@@ -69,7 +69,7 @@ A full, runnable version of this is [`examples/01_price_a_swap.py`](examples/01_
 
 ## What's included
 
-- A reusable **formula DAG core** (`ExprGraph`) and a **stage pipeline** (`Pipe`).
+- A reusable **formula DAG core** (`FormulaGraph`) and a **stage pipeline** (`Workflow`).
 - **Swap pricing** for CDI, IPCA, and CPI legs.
 - **Option pricing** under generalized Black-Scholes-Merton (GENERALIZED and
   MERTON), priced off an interpolated **volatility surface**, with **Greeks
@@ -93,7 +93,7 @@ just check                  # lint + typecheck + test
 
 | Doc | What |
 |-----|------|
-| [docs/concepts.md](docs/concepts.md) | The mental model: `ExprGraph`, `Router`, `MarketSnapshot`, `Pipe`, and the Router-vs-data rule. |
+| [docs/concepts.md](docs/concepts.md) | The mental model: `FormulaGraph`, `Router`, `MarketSnapshot`, `Workflow`, and the Router-vs-data rule. |
 | [docs/extending.md](docs/extending.md) | How to add a custom instrument, index, or payoff variant. |
 | [examples/](examples/) | Runnable, self-contained scripts. |
 
@@ -102,11 +102,11 @@ just check                  # lint + typecheck + test
 ```text
 schenberg/
   domain/            Pandera boundary schemas + enums
-  core/              ExprGraph, Router, MarketRequirement, Pipe
+  core/              FormulaGraph, Router, MarketRequirement, Workflow
   market_data/       MarketSnapshot, sources, curve specs, shocks, calendar
   pricing/
     api.py           public pricing facade
-    instruments/     swap (cdi/ipca/fixed legs), forward (generic/energy)
+    instruments/     swap (cdi/ipca/fixed legs), forward (generic/energy), option
     portfolio.py     value / PnL / DV01 helpers
   math/              shared Polars expressions
 docs/                concepts + extension guides

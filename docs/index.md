@@ -31,6 +31,6 @@ market = MarketSnapshot.from_sources(
 
 | | |
 |---|---|
-| **[Concepts](concepts.md)** | Mental model: ExprGraph, Router, MarketSnapshot, Pipe |
+| **[Concepts](concepts.md)** | Mental model: FormulaGraph, Router, MarketSnapshot, Workflow |
 | **[Extending](extending.md)** | Add an instrument, a variant, or a market dimension |
 | **[API Reference](api/index.md)** | Auto-generated from source docstrings |

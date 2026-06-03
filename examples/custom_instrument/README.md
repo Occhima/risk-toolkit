@@ -41,10 +41,11 @@ The work splits into three small pieces, each in its own file:
    row's tenor into its `reference_date`. Onboarding a new index is **one line**
    in `CONVENTIONS`; nothing else changes.
 
-2. **`graph.py` — "another graph".** Seven nodes wired by parameter name on the
-   same `ExprGraph` engine the built-ins use, declaring exactly the market data
-   it needs via `require(...)`. Crucially, the inflation curve is joined on
-   `(id_indexador, reference_date)` — the convention date *is* the selector.
+2. **`graph.py` — "another graph".** Seven formulas wired by parameter name on the
+   same `FormulaGraph` engine the built-ins use, declaring exactly the market data
+   it needs via `uses_market(MarketRequirement(...))`. Crucially, the inflation
+   curve is joined on `(id_indexador, reference_date)` — the convention date *is*
+   the selector.
 
 3. **`pricer.py` — the thin public function.** Normalize (attach
    `reference_date`), run the graph, aggregate. Mirrors the built-in

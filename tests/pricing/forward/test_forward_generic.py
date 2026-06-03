@@ -50,7 +50,7 @@ def test_base_forward_graph_prices_generic_forward_spread() -> None:
 
     out = cast(
         pl.DataFrame,
-        base_forward_graph.compute_for(forwards, market=market, output_profile="pricing").collect(),
+        base_forward_graph.compute(forwards, market=market, view="pricing").collect(),
     )
 
     expected_fv = 100.0

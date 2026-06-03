@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import polars as pl
-from schenberg.core.graph import ExprGraph
+from schenberg.core.graph import FormulaGraph
 from schenberg.market_data.snapshot import MarketSnapshot
 
 from .backends import PricingBackend, collect_custom, collect_local, collect_ray
@@ -84,38 +84,38 @@ def collect_pricing(
 
 
 def compute_graph_pricing(
-    graph: ExprGraph,
+    graph: FormulaGraph,
     lf: pl.LazyFrame,
     *,
     context: PricingExecutionContext | None = None,
     market: MarketSnapshot | None = None,
     outputs: Mapping[str, str] | None = None,
-    output_profile: str | None = None,
+    view: str | None = None,
 ) -> pl.DataFrame:
     """Compute and collect graph pricing outputs with a selected backend."""
-    pricing_lf = graph.compute_for(
+    pricing_lf = graph.compute(
         lf,
         market=market,
         outputs=outputs,
-        output_profile=output_profile,
+        view=view,
     )
     return collect_pricing(pricing_lf, context=context)
 
 
 def stage_graph_pricing(
-    graph: ExprGraph,
+    graph: FormulaGraph,
     lf: pl.LazyFrame,
     *,
     context: PricingExecutionContext | None = None,
     market: MarketSnapshot | None = None,
-    output_profile: str | None = None,
+    view: str | None = None,
     targets: list[str] | None = None,
 ) -> pl.DataFrame:
     """Materialize staged graph intermediates with a selected backend."""
     staged_lf = graph.stage(
         lf,
         market=market,
-        output_profile=output_profile,
+        view=view,
         targets=targets,
     )
     return collect_pricing(staged_lf, context=context)

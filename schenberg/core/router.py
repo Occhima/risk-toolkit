@@ -4,21 +4,23 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Protocol, TypeVar
+from typing import TYPE_CHECKING, Protocol, TypeVar
 
 import polars as pl
 
 from schenberg.core.columns import ColumnRef, RoutePredicate
-from schenberg.market_data.snapshot import MarketSnapshot
+
+if TYPE_CHECKING:
+    from schenberg.market_data.snapshot import MarketSnapshot
 
 
 class Pricer(Protocol):
-    def compute_for(
+    def compute(
         self,
-        lf: pl.LazyFrame,
+        frame: pl.LazyFrame,
         *,
         market: MarketSnapshot | None = None,
-        output_profile: str = "pricing",
+        view: str = "result",
     ) -> pl.LazyFrame: ...
 
 
@@ -27,24 +29,50 @@ P = TypeVar("P", bound=Pricer)
 
 @dataclass(slots=True)
 class Router:
+    """Dispatch rows to per-case pricers by predicate.
+
+    Build with :meth:`on` over one or more route columns, then register cases
+    with the :meth:`case` decorator (equality on the route columns) or the
+    :meth:`when` decorator (arbitrary predicates). Unmatched rows fall to
+    :meth:`default`.
+    """
+
     route_columns: tuple[ColumnRef, ...]
-    cases: list[tuple[tuple[RoutePredicate, ...], Pricer]] = field(default_factory=list)
+    cases: list[tuple[tuple[RoutePredicate | pl.Expr, ...], Pricer]] = field(default_factory=list)
     fallback: Pricer | None = None
 
     @classmethod
-    def by(cls, *columns: ColumnRef) -> Router:
+    def on(cls, *columns: ColumnRef) -> Router:
         if not columns:
-            raise ValueError("Router.by(...) requires at least one route column")
+            raise ValueError("Router.on(...) requires at least one route column")
         return cls(route_columns=tuple(columns))
 
     def default(self, pricer: Pricer) -> Router:
         self.fallback = pricer
         return self
 
-    def register(
+    def case(self, *values: object) -> Callable[[Callable[[], P]], P]:
+        """Register a case by value, one per route column.
+
+        ``router.case(OptionModel.GENERALIZED, OptionKind.CALL)`` builds the
+        equality predicates ``col == value`` against the route columns.
+        """
+        if len(values) != len(self.route_columns):
+            raise ValueError(
+                f"case expects {len(self.route_columns)} value(s) for route columns "
+                f"{[c.name for c in self.route_columns]}, got {len(values)}"
+            )
+        predicates = tuple(
+            column == value for column, value in zip(self.route_columns, values, strict=True)
+        )
+        return self.when(*predicates)
+
+    def when(
         self,
-        *predicates: RoutePredicate,
+        *predicates: RoutePredicate | pl.Expr,
     ) -> Callable[[Callable[[], P]], P]:
+        """Register a case by explicit predicates (supports complex conditions)."""
+
         def decorator(builder: Callable[[], P]) -> P:
             pricer = builder()
             self.cases.append((tuple(predicates), pricer))
@@ -52,12 +80,12 @@ class Router:
 
         return decorator
 
-    def compute_for(
+    def compute(
         self,
-        lf: pl.LazyFrame,
+        frame: pl.LazyFrame,
         *,
         market: MarketSnapshot | None = None,
-        output_profile: str = "pricing",
+        view: str = "result",
     ) -> pl.LazyFrame:
         parts: list[pl.LazyFrame] = []
         matched = pl.lit(False)
@@ -67,19 +95,19 @@ class Router:
             matched = matched | condition
 
             parts.append(
-                pricer.compute_for(
-                    lf.filter(condition),
+                pricer.compute(
+                    frame.filter(condition),
                     market=market,
-                    output_profile=output_profile,
+                    view=view,
                 )
             )
 
         if self.fallback is not None:
             parts.append(
-                self.fallback.compute_for(
-                    lf.filter(~matched),
+                self.fallback.compute(
+                    frame.filter(~matched),
                     market=market,
-                    output_profile=output_profile,
+                    view=view,
                 )
             )
 
@@ -89,11 +117,12 @@ class Router:
         return pl.concat(parts, how="diagonal_relaxed")
 
     @staticmethod
-    def _and(predicates: tuple[RoutePredicate, ...]) -> pl.Expr:
+    def _and(predicates: tuple[RoutePredicate | pl.Expr, ...]) -> pl.Expr:
         if not predicates:
             return pl.lit(True)
 
         condition = pl.lit(True)
         for predicate in predicates:
-            condition = condition & predicate.expr()
+            expr = predicate.expr() if isinstance(predicate, RoutePredicate) else predicate
+            condition = condition & expr
         return condition

@@ -4,25 +4,29 @@ from __future__ import annotations
 
 import polars as pl
 
-from schenberg.core.graph import ExprGraph
-from schenberg.core.market import curve, fixing, projected_index
+from schenberg.core.graph import FormulaGraph
 from schenberg.domain.enums import SwapLegKind
-from schenberg.pricing.instruments.swap.legs.registry import register_leg
+from schenberg.pricing.instruments.swap.legs.registry import (
+    CURVES,
+    FIXINGS,
+    PROJECTED,
+    register_leg,
+)
 
-ipca_cashflow_graph = ExprGraph("ipca_cashflow")
+ipca_cashflow_graph = FormulaGraph("ipca_cashflow")
 
 
-@ipca_cashflow_graph.node(tags=("inflation",))
+@ipca_cashflow_graph.formula(tags=("inflation",))
 def inflation_factor(base_index: pl.Expr, projected_index: pl.Expr) -> pl.Expr:
     return projected_index / base_index
 
 
-@ipca_cashflow_graph.node(tags=("coupon",))
+@ipca_cashflow_graph.formula(tags=("coupon",))
 def real_coupon_factor(real_coupon: pl.Expr, year_fraction: pl.Expr) -> pl.Expr:
     return 1.0 + real_coupon * year_fraction
 
 
-@ipca_cashflow_graph.node(tags=("cashflow",))
+@ipca_cashflow_graph.formula(tags=("cashflow",))
 def cashflow_amount(
     notional: pl.Expr, inflation_factor: pl.Expr, real_coupon_factor: pl.Expr
 ) -> pl.Expr:
@@ -30,7 +34,11 @@ def cashflow_amount(
 
 
 # IPCA and CPI share the same inflation payoff and market; only the kind differs.
-_inflation_market = [curve("zero_rate"), fixing(), projected_index()]
+_inflation_market = {
+    "zero_rate": CURVES.value("zero_rate"),
+    "base_index": FIXINGS.fixing(),
+    "projected_index": PROJECTED.value("projected_index"),
+}
 
 ipca_swap_leg_graph = register_leg(
     SwapLegKind.IPCA.value,

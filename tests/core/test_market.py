@@ -6,8 +6,9 @@ from typing import cast
 import polars as pl
 import pytest
 from schenberg.core.columns import ColumnSet
-from schenberg.core.market import curve, fixing
 from schenberg.domain.schemas.market_data import VolSurfaceContract
+from schenberg.market_data.curves import CurveSpec
+from schenberg.market_data.fixings import FixingsSpec
 from schenberg.market_data.interpolated import InterpolatedSpec
 from schenberg.market_data.snapshot import MarketSnapshot
 from schenberg.market_data.sources import MarketSource
@@ -22,9 +23,10 @@ def test_column_set_exposes_left_and_right_keys() -> None:
 
 
 def test_market_requirement_constructors_use_column_sets() -> None:
-    assert curve("zero_rate").left_keys == ("id_indexador", "payment_days")
-    assert curve("zero_rate").right_keys == ("id_indexador", "tenor_days")
-    assert fixing().outputs == {"fixing_value": "base_index"}
+    zero_rate = CurveSpec("curves").value("zero_rate", output="zero_rate")
+    assert zero_rate.left_keys == ("id_indexador", "payment_days")
+    assert zero_rate.right_keys == ("id_indexador", "tenor_days")
+    assert FixingsSpec("fixings").fixing().outputs == {"fixing_value": "base_index"}
 
 
 def test_market_snapshot_attach_lazily_joins_and_renames_outputs() -> None:
@@ -39,7 +41,7 @@ def test_market_snapshot_attach_lazily_joins_and_renames_outputs() -> None:
     )
     trades = pl.DataFrame({"id_indexador": [1], "payment_days": [252]}).lazy()
 
-    attached = snapshot.attach(trades, curve(outputs={"zero_rate": "rate"}))
+    attached = snapshot.attach(trades, CurveSpec("curves").value("zero_rate", output="rate"))
 
     assert isinstance(attached, pl.LazyFrame)
     expected_rate = 0.1

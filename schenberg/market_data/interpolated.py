@@ -12,10 +12,10 @@ It is declared the same way as any other market data — a ``Spec`` whose method
 returns an attachable requirement::
 
     SURFACE = InterpolatedSpec("vol_surface", axes=("tenor_days", "strike"))
-    graph.with_market(SURFACE.value("implied_vol", output="vol", on=("payment_days", "strike")))
+    graph.for_market(vol=SURFACE.value("implied_vol", on=("payment_days", "strike")))
 
     RATES = InterpolatedSpec("rates_curve", axes=("tenor_days",))
-    graph.with_market(RATES.value("zero_rate", on=("payment_days",)))
+    graph.for_market(zero_rate=RATES.value("zero_rate", on=("payment_days",)))
 
 Interpolation is scale-invariant along an axis, so axes are interpolated in
 their raw quoted units (e.g. tenor in days) — no day-count conversion needed.
@@ -24,12 +24,14 @@ their raw quoted units (e.g. tenor in days) — no day-count conversion needed.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, cast, overload
 
 import numpy as np
 import polars as pl
 from numpy.typing import ArrayLike, NDArray
 
+from schenberg.core.columns import ColumnLike, col_name
+from schenberg.core.market import MarketRead
 from schenberg.math.interpolation import bilinear, interp_linear
 
 if TYPE_CHECKING:
@@ -163,29 +165,54 @@ class InterpolatedSpec:
     axes: tuple[str, ...]
     group: str = "id_indexador"
 
+    @overload
+    def value(
+        self,
+        value_col: str,
+        *,
+        output: str,
+        on: tuple[ColumnLike, ...] | None = None,
+        group_col: ColumnLike | None = None,
+    ) -> InterpolatedRequirement: ...
+
+    @overload
+    def value(
+        self,
+        value_col: str,
+        *,
+        output: None = None,
+        on: tuple[ColumnLike, ...] | None = None,
+        group_col: ColumnLike | None = None,
+    ) -> MarketRead: ...
+
     def value(
         self,
         value_col: str,
         *,
         output: str | None = None,
-        on: tuple[str, ...] | None = None,
-        group_col: str | None = None,
-    ) -> InterpolatedRequirement:
+        on: tuple[ColumnLike, ...] | None = None,
+        group_col: ColumnLike | None = None,
+    ) -> MarketRead | InterpolatedRequirement:
         """Build the attachable requirement.
 
         ``on`` names the trade-side axis columns (defaults to the quote axes);
-        ``group_col`` the trade-side group key; ``output`` the column to write
-        (defaults to ``value_col``).
+        ``group_col`` the trade-side group key; ``output`` the column to write.
+        With ``output`` omitted, returns a :class:`MarketRead` finalized by
+        ``FormulaGraph.for_market``.
         """
-        trade_axes = on if on is not None else self.axes
-        if len(trade_axes) != len(self.axes):
-            raise ValueError(
-                f"expected {len(self.axes)} axis column(s) in `on`, got {trade_axes!r}"
+        raw_axes = on if on is not None else self.axes
+        if len(raw_axes) != len(self.axes):
+            raise ValueError(f"expected {len(self.axes)} axis column(s) in `on`, got {raw_axes!r}")
+        trade_axes = tuple(col_name(a) for a in raw_axes)
+        group_left = col_name(group_col) if group_col is not None else self.group
+
+        def build(out: str) -> InterpolatedRequirement:
+            return InterpolatedRequirement(
+                table=self.name,
+                group=(group_left, self.group),
+                axes=tuple(zip(trade_axes, self.axes, strict=True)),
+                value_col=value_col,
+                output=out,
             )
-        return InterpolatedRequirement(
-            table=self.name,
-            group=(group_col or self.group, self.group),
-            axes=tuple(zip(trade_axes, self.axes, strict=True)),
-            value_col=value_col,
-            output=output or value_col,
-        )
+
+        return build(output) if output is not None else MarketRead(build)

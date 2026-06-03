@@ -11,31 +11,31 @@ from __future__ import annotations
 
 import polars as pl
 
-from schenberg.core.graph import ExprGraph
+from schenberg.core.graph import FormulaGraph
 from schenberg.math.expressions import (
     continuous_discount_factor_expr,
     year_fraction_252_expr,
 )
 
-discount_graph = ExprGraph("discounting")
+discount_graph = FormulaGraph("discounting")
 
 
-@discount_graph.node(
+@discount_graph.formula(
     dtype=pl.Float64,
     tags=("time",),
     symbol="T",
-    formula=r"\frac{d}{252}",
+    latex=r"\frac{d}{252}",
     description="252-day year fraction (time to maturity).",
 )
 def year_fraction(payment_days: pl.Expr) -> pl.Expr:
     return year_fraction_252_expr(payment_days)
 
 
-@discount_graph.node(
+@discount_graph.formula(
     dtype=pl.Float64,
     tags=("discounting",),
     symbol="DF",
-    formula=r"e^{-rT}",
+    latex=r"e^{-rT}",
     description="Continuously compounded discount factor off the zero curve.",
 )
 def discount_factor(zero_rate: pl.Expr, year_fraction: pl.Expr) -> pl.Expr:
