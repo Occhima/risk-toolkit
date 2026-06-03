@@ -14,7 +14,31 @@ read by the graph formulas themselves.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+from datetime import date
+
 import polars as pl
+
+
+def nth_business_day_of_following_month(
+    period: pl.Expr,
+    *,
+    n: int,
+    holidays: Iterable[date] = (),
+) -> pl.Expr:
+    """The ``n``-th business day of the month *after* a ``"YYYY-MM"`` period.
+
+    Energy forwards fix/settle a few business days into the month following
+    delivery. ``period`` is a delivery-month expression (e.g.
+    ``cols(EnergyForwardLeg).delivery_period.expr()``); the result is the date of
+    the ``n``-th business day of the next month (``n=1`` is the first business
+    day), skipping weekends and ``holidays`` (pass ``ANBIMA_HOLIDAYS`` for the
+    Brazilian calendar). The anchor rolls forward onto a business day first.
+    """
+    if n < 1:
+        raise ValueError(f"n must be >= 1, got {n}")
+    first_of_following = period.str.to_date("%Y-%m").dt.offset_by("1mo")
+    return first_of_following.dt.add_business_days(n - 1, holidays=list(holidays), roll="forward")
 
 
 def start_of_tenor_year(

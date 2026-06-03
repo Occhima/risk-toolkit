@@ -248,6 +248,7 @@ def test_expected_user_workflow() -> None:
                 "submarket": "SE",
                 "delivery_period": "2026-07",
                 "strike": 250.0,
+                "fixing_date": date(2026, 8, 10),  # 6th ANBIMA business day of Aug 2026
             }
         ]
     )

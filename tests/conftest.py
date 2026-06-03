@@ -6,6 +6,7 @@ import polars as pl
 import pytest
 from schenberg.market_data.snapshot import MarketSnapshot
 from schenberg.market_data.sources import MarketSource
+from schenberg.pricing.instruments.forward.energy import with_fixing_date
 
 
 @pytest.fixture
@@ -120,7 +121,7 @@ def energy_market() -> MarketSnapshot:
 
 @pytest.fixture
 def energy_inputs() -> pl.LazyFrame:
-    return pl.DataFrame(
+    legs = pl.DataFrame(
         {
             "instrument_id": ["ENG-1", "ENG-1"],
             "instrument_type": ["FORWARD", "FORWARD"],
@@ -134,3 +135,5 @@ def energy_inputs() -> pl.LazyFrame:
             "currency": ["BRL", "BRL"],
         }
     ).lazy()
+    # The fixing date is part of the contract; build it with the utility.
+    return with_fixing_date(legs)

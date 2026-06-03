@@ -13,7 +13,9 @@ from schenberg.core.graph import ExprGraph
 from schenberg.domain.enums import ForwardFamily, InstrumentType, SettlementType
 from schenberg.domain.schemas.forward import EnergyForwardLeg, ForwardPricing, ForwardTrade
 from schenberg.domain.schemas.position import InstrumentPrice
+from schenberg.market_data.calendar.anbima import ANBIMA_HOLIDAYS
 from schenberg.market_data.curves.di import DiCurveSpec
+from schenberg.market_data.date_rules import nth_business_day_of_following_month
 from schenberg.market_data.forwards import EnergyForwardCurveSpec
 from schenberg.market_data.fx import FxRatesSpec
 from schenberg.market_data.snapshot import MarketSnapshot
@@ -28,6 +30,22 @@ PX = cols(InstrumentPrice)
 DI = DiCurveSpec("di_curve")
 ENERGY = EnergyForwardCurveSpec("energy_forward_curve")
 FX = FxRatesSpec("fx_rates")
+
+# Brazilian energy forwards fix on the 6th ANBIMA business day of the month after
+# the delivery month.
+_FIXING_BUSINESS_DAY = 6
+
+
+def with_fixing_date(legs: pl.LazyFrame) -> pl.LazyFrame:
+    """Attach each row's settlement/fixing date: the 6th ANBIMA business day of the
+    month following the contract's delivery month. A pure normalization step —
+    columns are referenced through the schema (``cols``), never as raw strings."""
+    fixing_date = nth_business_day_of_following_month(
+        E.delivery_period.expr(),
+        n=_FIXING_BUSINESS_DAY,
+        holidays=ANBIMA_HOLIDAYS,
+    ).alias(E.fixing_date.name)
+    return legs.with_columns(fixing_date)
 
 
 @forward_router.register(
