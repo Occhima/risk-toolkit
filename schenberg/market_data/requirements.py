@@ -8,9 +8,11 @@ def require(
     table: str,
     *pairs: tuple[str, str],
     outputs: dict[str, str],
+    optional: bool = False,
 ) -> MarketRequirement:
     return MarketRequirement(
         table=table,
         on=ColumnSet.from_pairs(*pairs),
         outputs=outputs,
+        optional=optional,
     )

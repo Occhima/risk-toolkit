@@ -15,10 +15,12 @@ from schenberg.core.columns import cols
 from schenberg.core.graph import ExprGraph
 from schenberg.core.market import MarketRequirement, curve
 from schenberg.domain.schemas import LegPricing, SwapLegInput
+from schenberg.market_data.fx import FxRatesSpec
 from schenberg.pricing.instruments.swap.generic import swap_leg_valuation_graph
 from schenberg.pricing.instruments.swap.router import swap_leg_router
 
 _L = cols(SwapLegInput)
+_FX = FxRatesSpec("fx_rates")
 
 
 def register_leg(
@@ -27,10 +29,14 @@ def register_leg(
     cashflow: ExprGraph,
     market: Sequence[MarketRequirement] = (curve("zero_rate"),),
 ) -> ExprGraph:
-    """Build a priced leg graph from a payoff + market, and route every ``kind`` to it."""
+    """Build a priced leg graph from a payoff + market, and route every ``kind`` to it.
+
+    FX is appended as optional market data, so any leg can be priced in a foreign
+    currency just by declaring an ``fx_rates`` source and carrying a ``currency``;
+    without them the leg stays local (fx rate 1.0)."""
     graph = (
         ExprGraph.compose(name, swap_leg_valuation_graph, cashflow)
-        .with_market(*market)
+        .with_market(*market, _FX.fx_rate(optional=True))
         .with_outputs("pricing", LegPricing)
     )
     for kind in kinds:

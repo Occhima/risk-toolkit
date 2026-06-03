@@ -37,6 +37,7 @@ class MarketRequirement:
     table: str
     on: ColumnSet
     outputs: dict[str, str]
+    optional: bool = False
 
     @property
     def left_keys(self) -> tuple[str, ...]:
@@ -47,12 +48,22 @@ class MarketRequirement:
         return self.on.right_keys
 
     def attach(self, lf: pl.LazyFrame, snapshot: MarketSnapshot) -> pl.LazyFrame:
-        """Attach market columns by a left join."""
+        """Attach market columns by a left join.
+
+        When ``optional``, the join is skipped (leaving the outputs unset, to be
+        defaulted downstream) if the source is absent or the frame lacks the join
+        keys — so a leg can declare e.g. an FX rate it may not actually use.
+        """
+        names = set(lf.collect_schema().names())
+        if self.optional and (
+            self.table not in snapshot.sources or not set(self.left_keys) <= names
+        ):
+            return lf
         src = snapshot.source(self.table).data
         right = src.select([*self.right_keys, *self.outputs.keys()]).rename(self.outputs)
         output_columns = set(self.outputs.values())
         droppable = output_columns - set(self.left_keys)
-        collisions = sorted(droppable & set(lf.collect_schema().names()))
+        collisions = sorted(droppable & names)
         if collisions:
             lf = lf.drop(collisions)
 
