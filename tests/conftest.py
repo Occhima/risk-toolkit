@@ -84,13 +84,19 @@ def energy_market() -> MarketSnapshot:
 def energy_inputs() -> pl.LazyFrame:
     return pl.DataFrame(
         {
-            "contract_id": ["ENG-1"],
-            "submarket": ["SE"],
-            "buy_sell": ["BUY"],
-            "id_indexador": [1],
-            "quantity": [10.0],
-            "strike": [100.0],
-            "currency": ["BRL"],
-            "delivery_periods": [["2026-07", "2026-08"]],
+            "trade_id": ["ENG-1-2026-07", "ENG-1-2026-08"],
+            "instrument_type": ["FORWARD", "FORWARD"],
+            "forward_family": ["ENERGY", "ENERGY"],
+            "settlement_type": ["PHYSICAL", "PHYSICAL"],
+            "contract_id": ["ENG-1", "ENG-1"],
+            "submarket": ["SE", "SE"],
+            "delivery_period": ["2026-07", "2026-08"],
+            "buy_sell": ["BUY", "BUY"],
+            "id_indexador": [1, 1],
+            "payment_days": [30, 60],
+            "future_value": [None, None],
+            "quantity": [10.0, 10.0],
+            "strike": [100.0, 100.0],
+            "currency": ["BRL", "BRL"],
         }
     ).lazy()

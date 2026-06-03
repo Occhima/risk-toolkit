@@ -1,5 +1,4 @@
-"""Forward instrument pricing."""
+from schenberg.pricing.instruments.forward import energy  # noqa: F401
+from schenberg.pricing.instruments.forward.router import forward_router
 
-from schenberg.pricing.instruments.forward.generic import forward_valuation_graph
-
-__all__ = ["forward_valuation_graph"]
+__all__ = ["forward_router"]

@@ -1,12 +1,8 @@
 """Generic forward valuation graph.
 
-The graph keeps instrument-specific cash-flow construction separate from the
-reusable valuation backbone:
+The graph stays boring and instrument-agnostic:
 
 ``future_value -> present_value -> value``
-
-Instrument pricers compose this graph and provide a ``future_value`` formula or
-column, plus market inputs for ``zero_rate`` and ``fx_rate``.
 """
 
 from __future__ import annotations
@@ -14,6 +10,8 @@ from __future__ import annotations
 import polars as pl
 
 from schenberg.core.graph import ExprGraph
+from schenberg.core.market import curve, fx
+from schenberg.domain.schemas import ForwardPricing
 
 forward_valuation_graph = ExprGraph("forward_valuation")
 
@@ -56,7 +54,14 @@ def value(present_value: pl.Expr, fx_rate: pl.Expr) -> pl.Expr:
 
 forward_valuation_graph.with_outputs(
     "pricing",
-    future_value="future_value",
-    present_value="present_value",
-    value="value",
+    ForwardPricing,
+)
+
+base_forward_graph = (
+    ExprGraph.compose("base_forward", forward_valuation_graph)
+    .with_market(
+        curve("zero_rate"),
+        fx(),
+    )
+    .with_outputs("pricing", ForwardPricing)
 )

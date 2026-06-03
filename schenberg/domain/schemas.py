@@ -9,7 +9,7 @@ import pandera.polars as pa
 
 class SwapInput(pa.DataFrameModel):
     class Config:
-        coerce = True  # all-null optional legs infer as Null dtype; coerce to Float64
+        coerce = True
 
     swap_id: str
     notional: float
@@ -26,6 +26,24 @@ class SwapInput(pa.DataFrameModel):
     real_coupon_passivo: float = pa.Field(nullable=True)
 
 
+class SwapLegInput(pa.DataFrameModel):
+    class Config:
+        coerce = True
+
+    swap_id: str
+    leg_id: str
+    leg_kind: str
+    pay_receive: str
+    notional: float
+    id_indexador: int
+    payment_days: int
+    accrual: float
+    base_date: date
+    fixed_rate: float = pa.Field(nullable=True)
+    real_coupon: float = pa.Field(nullable=True)
+    cashflow_amount: float = pa.Field(nullable=True)
+
+
 class SwapOutput(pa.DataFrameModel):
     swap_id: str
     npv: float
@@ -33,9 +51,6 @@ class SwapOutput(pa.DataFrameModel):
     passivo_pv: float
 
 
-# Shared output contract for every leg family. Drives with_outputs (identity per
-# field; override only the renames). Holds exactly what aggregation needs; family
-# audit columns (inflation_factor, projected_rate, ...) stay available via stage().
 class LegPricing(pa.DataFrameModel):
     year_fraction: float
     discount_factor: float
@@ -44,12 +59,6 @@ class LegPricing(pa.DataFrameModel):
     pv: float
 
 
-# ---------------------------------------------------------------------------
-# OPTIONAL: market-feed contracts. These validate the MarketSnapshot frames at
-# the data boundary (external feeds), NOT the requirement bindings. They are not
-# required for pricing; use them when loading market data, e.g.:
-#     CurveTable.validate(curves_df)
-# ---------------------------------------------------------------------------
 class CurveTable(pa.DataFrameModel):
     id_indexador: int
     tenor_days: int
@@ -70,6 +79,29 @@ class ProjectedTable(pa.DataFrameModel):
     projected_index: float
 
 
+class ForwardTrade(pa.DataFrameModel):
+    class Config:
+        coerce = True
+
+    trade_id: str
+    instrument_type: str
+    forward_family: str
+    settlement_type: str
+    currency: str
+    id_indexador: int
+    payment_days: int
+    future_value: float = pa.Field(nullable=True)
+
+
+class EnergyForwardLeg(ForwardTrade):
+    contract_id: str
+    submarket: str
+    delivery_period: str
+    buy_sell: str
+    quantity: float
+    strike: float
+
+
 class ForwardPricing(pa.DataFrameModel):
     """Reusable pricing output for forward-like instruments."""
 
@@ -79,11 +111,7 @@ class ForwardPricing(pa.DataFrameModel):
 
 
 class EnergyForward(pa.DataFrameModel):
-    """Block energy forward input.
-
-    ``delivery_periods`` is intentionally left as a runtime list column rather
-    than a Pandera field so Polars can explode it without object coercion.
-    """
+    """Legacy block energy forward input retained for compatibility only."""
 
     contract_id: str
     submarket: str
