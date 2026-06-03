@@ -549,11 +549,3 @@ class FormulaGraph:
         return {
             col: self._graph[self._indices[node]].dtype for col, node in self._views[view].items()
         }
-
-
-def __getattr__(name: str) -> Any:
-    if name == "Router":
-        from schenberg.core.router import Router  # noqa: PLC0415
-
-        return Router
-    raise AttributeError(name)

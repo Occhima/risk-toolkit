@@ -13,6 +13,7 @@ import polars as pl
 
 from schenberg.core.columns import cols
 from schenberg.core.graph import FormulaGraph
+from schenberg.core.market import MarketRead
 from schenberg.core.router import Router
 from schenberg.domain.enums import OptionKind, OptionModel
 from schenberg.domain.schemas.option import OptionPricedState, OptionTrade
@@ -61,20 +62,17 @@ def _risk_leaf(name: str, price_graph: FormulaGraph, *, price_node: str) -> Form
     )
 
 
-# --- GENERALIZED: cost of carry is a joined market column --------------------
-generalized_call = _price_leaf("generalized_call", price_node="call_price").for_market(
-    rate=CURVES.value("zero_rate", indexer=OPT.id_indexador, tenor=OPT.payment_days),
-    cost_of_carry=CARRY.value("cost_of_carry", indexer=OPT.id_indexador, tenor=OPT.payment_days),
-    vol=VOL.implied_vol(indexer=OPT.id_indexador, tenor=OPT.payment_days, strike=OPT.strike),
-)
-generalized_put = _price_leaf("generalized_put", price_node="put_price").for_market(
-    rate=CURVES.value("zero_rate", indexer=OPT.id_indexador, tenor=OPT.payment_days),
-    cost_of_carry=CARRY.value("cost_of_carry", indexer=OPT.id_indexador, tenor=OPT.payment_days),
-    vol=VOL.implied_vol(indexer=OPT.id_indexador, tenor=OPT.payment_days, strike=OPT.strike),
-)
+# Market reads are immutable, so one declaration each is shared across every
+# leaf; ``for_market`` binds a fresh dependency from them per graph.
+RATE = CURVES.value("zero_rate", indexer=OPT.id_indexador, tenor=OPT.payment_days)
+COST_OF_CARRY = CARRY.value("cost_of_carry", indexer=OPT.id_indexador, tenor=OPT.payment_days)
+DIV_YIELD = DIVS.value("div_yield", indexer=OPT.id_indexador, tenor=OPT.payment_days)
+IMPLIED_VOL = VOL.implied_vol(indexer=OPT.id_indexador, tenor=OPT.payment_days, strike=OPT.strike)
+
+_PRICE_NODE = {OptionKind.CALL: "call_price", OptionKind.PUT: "put_price"}
 
 
-# --- MERTON: cost of carry derived as b = r - q ------------------------------
+# MERTON derives the cost of carry as b = r - q rather than joining it.
 merton_carry = FormulaGraph("merton_carry")
 
 
@@ -88,69 +86,35 @@ def cost_of_carry(rate: pl.Expr, div_yield: pl.Expr) -> pl.Expr:
     return rate - div_yield
 
 
-merton_call = _price_leaf("merton_call", merton_carry, price_node="call_price").for_market(
-    rate=CURVES.value("zero_rate", indexer=OPT.id_indexador, tenor=OPT.payment_days),
-    div_yield=DIVS.value("div_yield", indexer=OPT.id_indexador, tenor=OPT.payment_days),
-    vol=VOL.implied_vol(indexer=OPT.id_indexador, tenor=OPT.payment_days, strike=OPT.strike),
-)
-merton_put = _price_leaf("merton_put", merton_carry, price_node="put_price").for_market(
-    rate=CURVES.value("zero_rate", indexer=OPT.id_indexador, tenor=OPT.payment_days),
-    div_yield=DIVS.value("div_yield", indexer=OPT.id_indexador, tenor=OPT.payment_days),
-    vol=VOL.implied_vol(indexer=OPT.id_indexador, tenor=OPT.payment_days, strike=OPT.strike),
-)
-
-generalized_call_risk = _risk_leaf(
-    "generalized_call_risk", generalized_call, price_node="call_price"
-)
-generalized_put_risk = _risk_leaf("generalized_put_risk", generalized_put, price_node="put_price")
-merton_call_risk = _risk_leaf("merton_call_risk", merton_call, price_node="call_price")
-merton_put_risk = _risk_leaf("merton_put_risk", merton_put, price_node="put_price")
-
-
-# Routers stay decorator-based: ``case`` builds equality predicates on the route
-# columns, while complex forks can use ``when``.
 option_price_router = Router.on(OPT.option_model, OPT.option_kind)
 option_risk_router = Router.on(OPT.option_model, OPT.option_kind)
 
 
-@option_price_router.case(OptionModel.GENERALIZED.value, OptionKind.CALL.value)
-def _generalized_call_price() -> FormulaGraph:
-    return generalized_call
+def _model(
+    model: OptionModel,
+    kind: OptionKind,
+    *carry_graphs: FormulaGraph,
+    **carry_market: MarketRead,
+) -> None:
+    """Declare one (model, kind): build its price and risk leaves and route both.
+
+    Every leaf reads ``rate`` and ``vol``; ``carry_graphs`` and ``carry_market``
+    supply the model-specific cost of carry (GENERALIZED joins it from a curve,
+    MERTON composes ``merton_carry`` and reads a dividend yield instead).
+    """
+    name = f"{model.value.lower()}_{kind.value.lower()}"
+    node = _PRICE_NODE[kind]
+    price = _price_leaf(name, *carry_graphs, price_node=node).for_market(
+        rate=RATE, vol=IMPLIED_VOL, **carry_market
+    )
+    risk = _risk_leaf(f"{name}_risk", price, price_node=node)
+    option_price_router.case(model.value, kind.value)(lambda: price)
+    option_risk_router.case(model.value, kind.value)(lambda: risk)
 
 
-@option_price_router.case(OptionModel.GENERALIZED.value, OptionKind.PUT.value)
-def _generalized_put_price() -> FormulaGraph:
-    return generalized_put
-
-
-@option_price_router.case(OptionModel.MERTON.value, OptionKind.CALL.value)
-def _merton_call_price() -> FormulaGraph:
-    return merton_call
-
-
-@option_price_router.case(OptionModel.MERTON.value, OptionKind.PUT.value)
-def _merton_put_price() -> FormulaGraph:
-    return merton_put
-
-
-@option_risk_router.case(OptionModel.GENERALIZED.value, OptionKind.CALL.value)
-def _generalized_call_risk() -> FormulaGraph:
-    return generalized_call_risk
-
-
-@option_risk_router.case(OptionModel.GENERALIZED.value, OptionKind.PUT.value)
-def _generalized_put_risk() -> FormulaGraph:
-    return generalized_put_risk
-
-
-@option_risk_router.case(OptionModel.MERTON.value, OptionKind.CALL.value)
-def _merton_call_risk() -> FormulaGraph:
-    return merton_call_risk
-
-
-@option_risk_router.case(OptionModel.MERTON.value, OptionKind.PUT.value)
-def _merton_put_risk() -> FormulaGraph:
-    return merton_put_risk
-
+_model(OptionModel.GENERALIZED, OptionKind.CALL, cost_of_carry=COST_OF_CARRY)
+_model(OptionModel.GENERALIZED, OptionKind.PUT, cost_of_carry=COST_OF_CARRY)
+_model(OptionModel.MERTON, OptionKind.CALL, merton_carry, div_yield=DIV_YIELD)
+_model(OptionModel.MERTON, OptionKind.PUT, merton_carry, div_yield=DIV_YIELD)
 
 option_router = option_price_router
