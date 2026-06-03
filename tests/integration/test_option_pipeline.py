@@ -12,9 +12,8 @@ from typing import cast
 import numpy as np
 import polars as pl
 import pytest
+from schenberg.math.black_scholes import GREEK_NAMES, generalized_price
 from schenberg.pricing.instruments.option import price_options, price_options_with_greeks
-from schenberg.risk.greeks import GREEK_NAMES
-from schenberg.risk.greeks.model import generalized_price
 
 from .option_data import make_market, make_options
 
@@ -41,17 +40,19 @@ def test_graph_price_reconciles_to_numpy_model(book) -> None:
     assert (df["price"].to_numpy() > 0).all()
 
 
-def test_three_greek_engines_reconcile_across_the_book(book) -> None:
+def test_three_greek_backends_reconcile_across_the_book(book) -> None:
     options, market = book
     frames = {
-        m: cast(pl.DataFrame, price_options_with_greeks(options, market, method=m).collect()).sort(
+        b: cast(pl.DataFrame, price_options_with_greeks(options, market, backend=b).collect()).sort(
             "option_id"
         )
-        for m in ("ANALYTIC", "NUMERIC", "AUTODIFF")
+        for b in ("CLOSED_FORM", "NUMERIC", "AUTODIFF")
     }
-    a, n, d = frames["ANALYTIC"], frames["NUMERIC"], frames["AUTODIFF"]
+    a, n, d = frames["CLOSED_FORM"], frames["NUMERIC"], frames["AUTODIFF"]
     for name in GREEK_NAMES:
-        assert np.allclose(a[name].to_numpy(), d[name].to_numpy(), rtol=1e-6, atol=1e-6), name
+        # graph closed-form uses an A&S normal CDF, the numpy backends an exact
+        # erf, so they agree to ~1e-6; finite differences are looser.
+        assert np.allclose(a[name].to_numpy(), d[name].to_numpy(), rtol=1e-5, atol=1e-5), name
         assert np.allclose(a[name].to_numpy(), n[name].to_numpy(), rtol=1e-3, atol=1e-3), name
 
 

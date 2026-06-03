@@ -18,11 +18,13 @@ from schenberg.core.columns import cols
 from schenberg.core.graph import ExprGraph
 from schenberg.core.router import Router
 from schenberg.domain.enums import OptionKind, OptionModel
-from schenberg.domain.schemas.option import OptionTrade
+from schenberg.domain.schemas.option import OptionGreeks, OptionTrade
 from schenberg.market_data.requirements import require
 from schenberg.pricing.instruments.option.core import generalized_bsm_core
+from schenberg.risk.greeks import bsm_greeks_graph
 
 OPT = cols(OptionTrade)
+_GREEK_OUTPUTS = {name: name for name in OptionGreeks.to_schema().columns}
 
 # --- market requirements (join on underlying + tenor) ------------------------
 _rate = require(
@@ -46,10 +48,15 @@ _dividend = require(
 
 
 def _leaf(name: str, *graphs: ExprGraph, price_node: str) -> ExprGraph:
-    """A priced clone of the core exposing price + the terms the Greeks reuse."""
-    return ExprGraph.compose(name, generalized_bsm_core, *graphs).with_outputs(
-        "pricing", d1="d1", d2="d2", price=price_node, cost_of_carry="cost_of_carry"
-    )
+    """A priced clone of the core composed with the Greek graph.
+
+    Exposes two profiles: ``pricing`` (price + the d1/d2/carry terms) and
+    ``greeks`` (that plus the five closed-form sensitivities)."""
+    leaf = ExprGraph.compose(name, generalized_bsm_core, bsm_greeks_graph, *graphs)
+    pricing = {"d1": "d1", "d2": "d2", "price": price_node, "cost_of_carry": "cost_of_carry"}
+    leaf.with_outputs("pricing", **pricing)
+    leaf.with_outputs("greeks", **pricing, **_GREEK_OUTPUTS)
+    return leaf
 
 
 # --- GENERALIZED: cost of carry is a joined market column --------------------
