@@ -1,4 +1,5 @@
 """Public boundary contracts. Pandera is used ONLY here, not internally."""
+
 from __future__ import annotations
 
 from datetime import date
@@ -67,3 +68,33 @@ class ProjectedTable(pa.DataFrameModel):
     id_indexador: int
     tenor_days: int
     projected_index: float
+
+
+class ForwardPricing(pa.DataFrameModel):
+    """Reusable pricing output for forward-like instruments."""
+
+    future_value: float
+    present_value: float
+    value: float
+
+
+class EnergyForward(pa.DataFrameModel):
+    """Block energy forward input.
+
+    ``delivery_periods`` is intentionally left as a runtime list column rather
+    than a Pandera field so Polars can explode it without object coercion.
+    """
+
+    contract_id: str
+    submarket: str
+    buy_sell: str
+    id_indexador: int
+    quantity: float
+    strike: float
+    currency: str
+
+
+class EnergyForwardOutput(pa.DataFrameModel):
+    contract_id: str
+    mtm_local: float
+    mtm: float

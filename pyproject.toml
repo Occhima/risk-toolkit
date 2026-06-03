@@ -1,0 +1,63 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "schenberg"
+version = "0.1.0"
+description = "Graph-based risk and pricing toolkit for forwards, swaps, portfolios, PnL, and risk."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [{ name = "Schenberg contributors" }]
+dependencies = [
+  "pandera[polars]>=0.25",
+  "polars>=1.30",
+  "rustworkx>=0.16",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.4",
+  "ruff>=0.12",
+  "ty>=0.0.1a16",
+  "poethepoet>=0.36",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.4",
+  "ruff>=0.12",
+  "ty>=0.0.1a16",
+  "poethepoet>=0.36",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["schenberg"]
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["schenberg", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "PL"]
+ignore = ["PLR0913"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.ty]
+environment = { python-version = "3.12" }
+
+[tool.poe.tasks]
+test = "pytest"
+lint = "ruff check ."
+format = "ruff format ."
+typecheck = "ty check"
+check = ["lint", "typecheck", "test"]

@@ -1,5 +1,5 @@
 {
-  description = "Masters thesis: Neural SDE calibration and Soft-DTW alignment";
+  description = "Schenberg risk toolkit: graph-based Python pricing and risk";
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 

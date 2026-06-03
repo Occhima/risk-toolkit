@@ -2,16 +2,19 @@
 
 This file contains no engine logic -- only declarations.
 """
+
 from __future__ import annotations
 
-import polars as pl
+from typing import cast
+
 import pandera.polars as pa
+import polars as pl
 from pandera.typing.polars import LazyFrame
 
-from ..graph import ExprGraph, Router
-from ..market import MarketSnapshot, curve, fixing, projected_index
-from .schemas import SwapInput, SwapOutput, LegPricing
-from .transforms import swap_to_legs, aggregate_swap_pv
+from schenberg.core.graph import ExprGraph, Router
+from schenberg.core.market import MarketSnapshot, curve, fixing, projected_index
+from schenberg.domain.schemas import LegPricing, SwapInput, SwapOutput
+from schenberg.pricing.instruments.swap.transforms import aggregate_swap_pv, swap_to_legs
 
 # ---------------------------------------------------------------------------
 # Shared discounting graph
@@ -19,23 +22,27 @@ from .transforms import swap_to_legs, aggregate_swap_pv
 discounting_graph = ExprGraph("discounting")
 
 
-@discounting_graph.node(dtype=pl.Float64, tags=("time",),
-                        description="Business-day year fraction, 252 basis.")
+@discounting_graph.node(
+    dtype=pl.Float64, tags=("time",), description="Business-day year fraction, 252 basis."
+)
 def year_fraction(payment_days: pl.Expr) -> pl.Expr:
     return payment_days / 252.0
 
 
-@discounting_graph.node(dtype=pl.Float64, tags=("discounting",),
-                        description="Discount factor from a continuously compounded zero rate.")
+@discounting_graph.node(
+    dtype=pl.Float64,
+    tags=("discounting",),
+    description="Discount factor from a continuously compounded zero rate.",
+)
 def discount_factor(zero_rate: pl.Expr, year_fraction: pl.Expr) -> pl.Expr:
     return (-zero_rate * year_fraction).exp()
 
 
-@discounting_graph.node(dtype=pl.Float64, tags=("pricing",),
-                        description="Present value of a signed cashflow.")
+@discounting_graph.node(
+    dtype=pl.Float64, tags=("pricing",), description="Present value of a signed cashflow."
+)
 def leg_pv(signed_cashflow: pl.Expr, discount_factor: pl.Expr) -> pl.Expr:
     return signed_cashflow * discount_factor
-
 
 
 # ---------------------------------------------------------------------------
@@ -49,13 +56,13 @@ def projected_rate(forward_rate: pl.Expr) -> pl.Expr:
     return forward_rate
 
 
-@cdi_cashflow_graph.node(tags=("cashflow", "cdi"))
-def cashflow_amount(notional: pl.Expr, projected_rate: pl.Expr, accrual: pl.Expr) -> pl.Expr:
+@cdi_cashflow_graph.node(tags=("cashflow", "cdi"), name="cashflow_amount")
+def cdi_cashflow_amount(notional: pl.Expr, projected_rate: pl.Expr, accrual: pl.Expr) -> pl.Expr:
     return notional * projected_rate * accrual
 
 
-@cdi_cashflow_graph.node(tags=("cashflow",))
-def signed_cashflow(pay_receive: pl.Expr, cashflow_amount: pl.Expr) -> pl.Expr:
+@cdi_cashflow_graph.node(tags=("cashflow",), name="signed_cashflow")
+def cdi_signed_cashflow(pay_receive: pl.Expr, cashflow_amount: pl.Expr) -> pl.Expr:
     return pay_receive * cashflow_amount
 
 
@@ -77,14 +84,15 @@ def real_coupon_factor(real_coupon: pl.Expr, year_fraction: pl.Expr) -> pl.Expr:
     return 1.0 + real_coupon * year_fraction
 
 
-@inflation_cashflow_graph.node(tags=("cashflow",))
-def cashflow_amount(notional: pl.Expr, inflation_factor: pl.Expr,
-                    real_coupon_factor: pl.Expr) -> pl.Expr:
+@inflation_cashflow_graph.node(tags=("cashflow",), name="cashflow_amount")
+def inflation_cashflow_amount(
+    notional: pl.Expr, inflation_factor: pl.Expr, real_coupon_factor: pl.Expr
+) -> pl.Expr:
     return notional * inflation_factor * real_coupon_factor - notional
 
 
-@inflation_cashflow_graph.node(tags=("cashflow",))
-def signed_cashflow(pay_receive: pl.Expr, cashflow_amount: pl.Expr) -> pl.Expr:
+@inflation_cashflow_graph.node(tags=("cashflow",), name="signed_cashflow")
+def inflation_signed_cashflow(pay_receive: pl.Expr, cashflow_amount: pl.Expr) -> pl.Expr:
     return pay_receive * cashflow_amount
 
 
@@ -129,9 +137,10 @@ def cpi_leg_graph():
 # Public API
 # ---------------------------------------------------------------------------
 @pa.check_types(lazy=True)
-def price_swap(swaps: LazyFrame[SwapInput], market: MarketSnapshot, *,
-               output_profile: str = "pricing") -> LazyFrame[SwapOutput]:
+def price_swap(
+    swaps: LazyFrame[SwapInput], market: MarketSnapshot, *, output_profile: str = "pricing"
+) -> LazyFrame[SwapOutput]:
     """Public API. Lazy in, lazy out. Pandera validates the boundary contracts."""
     legs = swap_to_legs(swaps)
     priced = swap_router.compute_for(legs, market=market, output_profile=output_profile)
-    return aggregate_swap_pv(priced)
+    return cast(LazyFrame[SwapOutput], aggregate_swap_pv(priced))
