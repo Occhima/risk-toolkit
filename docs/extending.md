@@ -74,11 +74,71 @@ def price_my_instrument(legs, market):
     return priced.group_by("instrument_id").agg(price=pl.col("value").sum())
 ```
 
+## Fixing / reference-date adaptation
+
+Sometimes a convention only changes *which market row* is selected — e.g.
+the PCA fixing factor must be read at the first day of the contract's tenor
+year, not at the tenor date itself.  That is a join-key derivation, not a
+router or graph change.
+
+1. Derive the join-key column **before** the graph using the expression
+   helpers in `schenberg.market_data.date_rules`:
+
+   ```python
+   from schenberg.market_data.date_rules import start_of_tenor_year
+   from schenberg.market_data.fixings import FixingsSpec
+
+   FIXINGS = FixingsSpec("fixings")
+
+   prepared = legs.with_columns(
+       start_of_tenor_year(tenor_col="tenor_date", output_col="pca_fixing_date")
+   )
+   ```
+
+2. Reference that column in the market requirement:
+
+   ```python
+   graph.with_market(
+       FIXINGS.value(
+           indexer_col="id_indexador",
+           date_col="pca_fixing_date",
+           output="pca_factor",
+       )
+   )
+   ```
+
+The graph formula sees `pca_factor` as a plain input; it never knows which
+calendar convention was applied.  Adding a new convention is a one-line
+expression at the call site.
+
+## Structured products
+
+A structured product is a table of component legs.  Price each component
+normally, then combine with `price_structures`:
+
+```python
+from schenberg.pricing.structured import price_structures
+from schenberg.position.functions import with_prices
+
+atomic_prices = pl.concat([forward_prices, swap_prices], how="diagonal_relaxed")
+structure_prices = price_structures(structure_legs, atomic_prices)
+all_prices = pl.concat([atomic_prices, structure_prices], how="diagonal_relaxed")
+priced_positions = with_prices(positions, all_prices)
+```
+
+`structure_legs` is a `StructureLeg` frame with columns
+`structure_id, leg_id, component_instrument_type, component_instrument_id,
+quantity, side`.  The output of `price_structures` has the same shape as
+any other `InstrumentPrice` frame (`instrument_type, instrument_id, price`)
+with `instrument_type = "STRUCTURE"`.
+
 ## Checklist
 
 - [ ] New math → a graph (`ExprGraph`), reusing `compose()` / shared expressions.
 - [ ] Per-row formula forks → a `Router`; pure value differences → a join key.
 - [ ] Join keys not in the raw input → a transform/stage *before* the graph.
 - [ ] Index/convention differences → a data registry, extended by one row.
+- [ ] Fixing-date convention → `date_rules` expression, not a router node.
+- [ ] Structured product → `price_structures`, not a new graph or router.
 - [ ] Public function returns a lazy frame; `collect()` stays the caller's call.
 - [ ] Boundary typed with a Pandera schema; internals stay plain Polars.

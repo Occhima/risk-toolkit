@@ -31,6 +31,27 @@ class FixingsSpec:
             outputs={"fixing_value": output},
         )
 
+    def value(
+        self,
+        *,
+        indexer_col: str = "id_indexador",
+        date_col: str = "fixing_date",
+        output: str = "fixing_value",
+    ) -> MarketRequirement:
+        """Create a MarketRequirement for fetching a fixing value by date.
+
+        Use with a pre-computed join-key column, e.g. one derived via
+        ``schenberg.market_data.date_rules``.
+        """
+        return MarketRequirement(
+            table=self.name,
+            on=ColumnSet.from_pairs(
+                (indexer_col, "id_indexador"),
+                (date_col, "fixing_date"),
+            ),
+            outputs={"fixing_value": output},
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class Fixings:
