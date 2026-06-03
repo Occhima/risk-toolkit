@@ -46,6 +46,9 @@ packages = ["schenberg"]
 [tool.pytest.ini_options]
 addopts = "-ra"
 testpaths = ["tests"]
+markers = [
+  "performance: throughput guardrails (run with `pytest integration`)",
+]
 
 [tool.ruff]
 line-length = 100
