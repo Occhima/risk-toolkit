@@ -110,4 +110,4 @@ def test_price_forward_instruments_returns_instrument_price(energy_inputs, energ
     assert result.columns == ["instrument_type", "instrument_id", "price"]
     assert result.select("instrument_type").item() == "FORWARD"
     assert result.select("instrument_id").item() == "ENG-1"
-    assert result.select("price").item() == pytest.approx(48.831742, rel=1e-6)
+    assert result.select("price").item() == pytest.approx(49.057467, rel=1e-6)

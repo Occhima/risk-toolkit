@@ -23,4 +23,4 @@ def test_valuation_pipe_exposes_simplified_position_pricing_stages(energy_inputs
 
     assert {"forward_prices", "priced_positions", "book_mtm"}.issubset(env)
     assert valuation_pipe.order() == ["forward_prices", "priced_positions", "book_mtm"]
-    assert env["book_mtm"].collect().select("mtm").item() == pytest.approx(4883.174188, rel=1e-6)
+    assert env["book_mtm"].collect().select("mtm").item() == pytest.approx(4905.7467, rel=1e-6)

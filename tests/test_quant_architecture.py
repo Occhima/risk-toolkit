@@ -87,7 +87,7 @@ def test_energy_forward_curve_spec_requirement() -> None:
     assert req.table == "energy_forward_curve"
     assert req.left_keys == ("submarket", "delivery_period")
     assert req.right_keys == ("submarket", "delivery_period")
-    assert req.outputs == {"forward_price": "forward_price"}
+    assert req.outputs == {"forward_price": "forward_price", "settle_days": "payment_days"}
 
 
 def test_market_snapshot_from_sources_attach_and_shock() -> None:
@@ -149,8 +149,8 @@ def test_energy_forward_graph_and_position_layer(energy_inputs, energy_market) -
 
     assert priced_df.height == 1
     assert priced_df.select("instrument_id").item() == "ENG-1"
-    assert priced_df.select("price").item() == pytest.approx(48.831742, rel=1e-6)
-    assert valued_df.select("mtm").item() == pytest.approx(4883.174188, rel=1e-6)
+    assert priced_df.select("price").item() == pytest.approx(49.057467, rel=1e-6)
+    assert valued_df.select("mtm").item() == pytest.approx(4905.7467, rel=1e-6)
 
 
 def test_pnl_from_priced_positions_can_be_called_independently() -> None:
@@ -206,14 +206,13 @@ def test_valuation_pipe_exposes_intermediate_outputs(energy_inputs, energy_marke
     env = valuation_pipe.run(forwards=energy_inputs, positions=positions, market=energy_market)
 
     assert {"forward_prices", "priced_positions", "book_mtm"}.issubset(env)
-    assert env["book_mtm"].collect().select("mtm").item() == pytest.approx(4883.174188, rel=1e-6)
+    assert env["book_mtm"].collect().select("mtm").item() == pytest.approx(4905.7467, rel=1e-6)
 
 
 def test_expected_user_workflow() -> None:
     calendar = Calendar.business_252(holidays=set())
-    # delivery 2026-07 settles 2026-08-10 -> 47 business days from as_of 2026-06-03.
     di_curve_data = DiCurveContract.from_records(
-        [{"curve_name": "DI", "id_indexador": 1, "tenor_days": 47, "zero_rate": 0.1}]
+        [{"curve_name": "DI", "id_indexador": 1, "tenor_days": 21, "zero_rate": 0.1}]
     )
     energy_curve_data = EnergyForwardCurveContract.from_records(
         [
@@ -221,6 +220,7 @@ def test_expected_user_workflow() -> None:
                 "submarket": "SE",
                 "delivery_period": "2026-07",
                 "forward_price": 260.0,
+                "settle_days": 21,
             }
         ]
     )
@@ -244,6 +244,7 @@ def test_expected_user_workflow() -> None:
                 "settlement_type": "PHYSICAL",
                 "currency": "BRL",
                 "id_indexador": 1,
+                "payment_days": 21,
                 "submarket": "SE",
                 "delivery_period": "2026-07",
                 "strike": 250.0,

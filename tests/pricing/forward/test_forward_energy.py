@@ -14,11 +14,8 @@ def test_price_energy_forward_prices_normalized_rows_without_quantity(
 ) -> None:
     result = cast(pl.DataFrame, price_energy_forward(energy_inputs, energy_market).collect())
 
-    # payment_days are derived from the ANBIMA settlement dates vs as_of 2026-06-03:
-    #   2026-07 settles 2026-08-10 -> 47 business days
-    #   2026-08 settles 2026-09-09 -> 68 business days
-    expected = (120.0 - 100.0) * math.exp(-0.10 * 47.0 / 252.0)
-    expected += (130.0 - 100.0) * math.exp(-0.10 * 68.0 / 252.0)
+    expected = (120.0 - 100.0) * math.exp(-0.10 * 30.0 / 252.0)
+    expected += (130.0 - 100.0) * math.exp(-0.10 * 60.0 / 252.0)
 
     assert result.select("instrument_id").item() == "ENG-1"
     assert result.select("instrument_type").item() == "FORWARD"

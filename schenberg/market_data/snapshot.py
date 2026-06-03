@@ -37,26 +37,9 @@ class MarketSnapshot:
     def attach(self, lf: pl.LazyFrame, req: MarketRequirement) -> pl.LazyFrame:
         src = self.source(req.table).data
         right = src.select([*req.right_keys, *req.outputs.keys()]).rename(req.outputs)
-        left_names = set(lf.collect_schema().names())
-
-        # A routed/filtered subframe may lack a left join key (e.g. a derived
-        # tenor that only one instrument family supplies). Materialize it as a
-        # typed null so the left join is well-formed and simply finds no match.
-        right_schema = right.collect_schema()
-        missing_keys = [
-            (left, right_key)
-            for left, right_key in zip(req.left_keys, req.right_keys, strict=True)
-            if left not in left_names
-        ]
-        if missing_keys:
-            lf = lf.with_columns(
-                pl.lit(None, dtype=right_schema[right_key]).alias(left)
-                for left, right_key in missing_keys
-            )
-
         output_columns = set(req.outputs.values())
         droppable = output_columns - set(req.left_keys)
-        collisions = sorted(droppable & left_names)
+        collisions = sorted(droppable & set(lf.collect_schema().names()))
         if collisions:
             lf = lf.drop(collisions)
 

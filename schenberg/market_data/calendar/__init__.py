@@ -9,6 +9,10 @@ from schenberg.market_data.calendar.anbima import (
     generate_holidays,
     load_holidays,
 )
+from schenberg.market_data.calendar.business_days import (
+    business_day_count,
+    business_day_count_expr,
+)
 from schenberg.market_data.calendar.conventions import AccrualConvention, Calendar
 
 __all__ = [
@@ -17,6 +21,8 @@ __all__ = [
     "AccrualConvention",
     "Calendar",
     "anbima_calendar",
+    "business_day_count",
+    "business_day_count_expr",
     "generate_holidays",
     "load_holidays",
 ]

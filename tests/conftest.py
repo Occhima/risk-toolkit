@@ -71,8 +71,6 @@ def swap_inputs() -> pl.LazyFrame:
 
 @pytest.fixture
 def energy_market() -> MarketSnapshot:
-    # Flat DI curve so any ANBIMA-derived settlement tenor joins to the same rate.
-    tenors = list(range(0, 366))
     return MarketSnapshot.from_sources(
         as_of=date(2026, 6, 3),
         sources=[
@@ -80,10 +78,10 @@ def energy_market() -> MarketSnapshot:
                 "di_curve",
                 pl.DataFrame(
                     {
-                        "curve_name": ["DI"] * len(tenors),
-                        "id_indexador": [1] * len(tenors),
-                        "tenor_days": tenors,
-                        "zero_rate": [0.10] * len(tenors),
+                        "curve_name": ["DI", "DI"],
+                        "id_indexador": [1, 1],
+                        "tenor_days": [30, 60],
+                        "zero_rate": [0.10, 0.10],
                     }
                 ).lazy(),
             ),
@@ -94,6 +92,7 @@ def energy_market() -> MarketSnapshot:
                         "submarket": ["SE", "SE"],
                         "delivery_period": ["2026-07", "2026-08"],
                         "forward_price": [120.0, 130.0],
+                        "settle_days": [30, 60],
                     }
                 ).lazy(),
             ),
@@ -107,8 +106,6 @@ def energy_market() -> MarketSnapshot:
 
 @pytest.fixture
 def energy_inputs() -> pl.LazyFrame:
-    # No payment_days: the energy pricer derives it from the delivery period's
-    # ANBIMA settlement date (6th business day after month-end) versus as_of.
     return pl.DataFrame(
         {
             "instrument_id": ["ENG-1", "ENG-1"],
@@ -118,6 +115,7 @@ def energy_inputs() -> pl.LazyFrame:
             "submarket": ["SE", "SE"],
             "delivery_period": ["2026-07", "2026-08"],
             "id_indexador": [1, 1],
+            "payment_days": [30, 60],
             "strike": [100.0, 100.0],
             "currency": ["BRL", "BRL"],
         }
