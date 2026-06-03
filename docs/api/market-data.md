@@ -8,9 +8,9 @@
 
 ::: schenberg.market_data.sources.MarketSource
 
-## Requirements
+## Curves
 
-::: schenberg.market_data.requirements
+::: schenberg.market_data.curves.CurveSpec
 
 ## Forwards
 

@@ -5,10 +5,11 @@ from dataclasses import dataclass
 import pandera.polars as pa
 from pandera.typing.polars import LazyFrame
 
+from schenberg.core.columns import ColumnLike
 from schenberg.core.market import MarketRequirement
 from schenberg.domain.schemas.market_data import DiCurveContract
 from schenberg.market_data.calendar.conventions import Calendar
-from schenberg.market_data.requirements import require
+from schenberg.market_data.curves import CurveSpec
 from schenberg.market_data.sources import MarketSource
 
 
@@ -19,16 +20,11 @@ class DiCurveSpec:
     def zero_rate(
         self,
         *,
-        indexer_col: str = "id_indexador",
-        tenor_col: str = "payment_days",
+        indexer: ColumnLike = "id_indexador",
+        tenor: ColumnLike = "payment_days",
         output: str = "zero_rate",
     ) -> MarketRequirement:
-        return require(
-            self.name,
-            (indexer_col, "id_indexador"),
-            (tenor_col, "tenor_days"),
-            outputs={"zero_rate": output},
-        )
+        return CurveSpec(self.name).value("zero_rate", indexer=indexer, tenor=tenor, output=output)
 
 
 @dataclass(frozen=True, slots=True)

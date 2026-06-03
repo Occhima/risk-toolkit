@@ -18,8 +18,9 @@ stays index-agnostic: one graph prices both IPCA and CPI contracts.
 from __future__ import annotations
 
 import polars as pl
+from schenberg.core.columns import ColumnSet
 from schenberg.core.graph import FormulaGraph
-from schenberg.market_data.requirements import require
+from schenberg.core.market import MarketRequirement
 from schenberg.math.expressions import (
     continuous_discount_factor_expr,
     year_fraction_252_expr,
@@ -70,28 +71,28 @@ inflation_energy_graph.returns(
     value="value",
 )
 
-# Market bindings. Note the inflation curve is joined on (id_indexador,
-# reference_date): the convention-specific date is what selects the right point.
+# Market bindings. Each is a left join described by its key bindings; the
+# inflation curve joins on (id_indexador, reference_date), so the convention-
+# specific date is what selects the right point.
 inflation_energy_graph.uses_market(
-    require(
-        "inflation_curve",
-        ("id_indexador", "id_indexador"),
-        ("reference_date", "ref_date"),
+    MarketRequirement(
+        table="inflation_curve",
+        on=ColumnSet.from_pairs(("id_indexador", "id_indexador"), ("reference_date", "ref_date")),
         outputs={"projected_index": "projected_index"},
     ),
-    require(
-        "inflation_fixings",
-        ("id_indexador", "id_indexador"),
+    MarketRequirement(
+        table="inflation_fixings",
+        on=ColumnSet.from_pairs(("id_indexador", "id_indexador")),
         outputs={"base_index": "base_index"},
     ),
-    require(
-        "di_curve",
-        ("payment_days", "tenor_days"),
+    MarketRequirement(
+        table="di_curve",
+        on=ColumnSet.from_pairs(("payment_days", "tenor_days")),
         outputs={"zero_rate": "zero_rate"},
     ),
-    require(
-        "fx_rates",
-        ("currency", "currency"),
+    MarketRequirement(
+        table="fx_rates",
+        on=ColumnSet.from_pairs(("currency", "currency")),
         outputs={"fx_rate": "fx_rate"},
     ),
 )

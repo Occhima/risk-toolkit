@@ -5,9 +5,13 @@ from __future__ import annotations
 import polars as pl
 
 from schenberg.core.graph import FormulaGraph
-from schenberg.core.market import curve, fixing, projected_index
 from schenberg.domain.enums import SwapLegKind
-from schenberg.pricing.instruments.swap.legs.registry import register_leg
+from schenberg.pricing.instruments.swap.legs.registry import (
+    CURVES,
+    FIXINGS,
+    PROJECTED,
+    register_leg,
+)
 
 ipca_cashflow_graph = FormulaGraph("ipca_cashflow")
 
@@ -30,7 +34,11 @@ def cashflow_amount(
 
 
 # IPCA and CPI share the same inflation payoff and market; only the kind differs.
-_inflation_market = [curve("zero_rate"), fixing(), projected_index()]
+_inflation_market = {
+    "zero_rate": CURVES.value("zero_rate"),
+    "base_index": FIXINGS.fixing(),
+    "projected_index": PROJECTED.value("projected_index"),
+}
 
 ipca_swap_leg_graph = register_leg(
     SwapLegKind.IPCA.value,

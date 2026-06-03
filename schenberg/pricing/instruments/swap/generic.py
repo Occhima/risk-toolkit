@@ -11,9 +11,9 @@ from __future__ import annotations
 import polars as pl
 
 from schenberg.core.graph import FormulaGraph
-from schenberg.core.market import curve
 from schenberg.domain.enums import PayReceive
 from schenberg.domain.schemas import LegPricing
+from schenberg.market_data.curves import CurveSpec
 from schenberg.pricing.discounting import discount_graph
 
 _leg_payoff = FormulaGraph("swap_leg_payoff")
@@ -40,6 +40,6 @@ swap_leg_valuation_graph = FormulaGraph.compose(
 
 base_swap_leg_graph = (
     FormulaGraph.compose("base_swap_leg", swap_leg_valuation_graph)
-    .uses_market(curve("zero_rate"))
+    .for_market(zero_rate=CurveSpec("curves").value("zero_rate"))
     .returns("pricing", LegPricing)
 )

@@ -55,8 +55,8 @@ date. That `reference_date` is:
 2. Built as a single lazy column via `reference_date_expr()` and attached by a
    transform (`add_reference_date`) that runs before the graph.
 
-3. Used as a join key: `require("inflation_curve", ("id_indexador", "id_indexador"),
-   ("reference_date", "ref_date"), ...)`.
+3. Used as a join key in a `MarketRequirement` whose `on` binds
+   `("reference_date", "ref_date")` (see `examples/custom_instrument/graph.py`).
 
 Because the convention reduces to a *value* in a column, **one graph prices every
 index** — no router, no branching in the formulas.

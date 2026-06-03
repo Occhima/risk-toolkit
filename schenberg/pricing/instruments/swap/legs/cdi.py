@@ -5,9 +5,8 @@ from __future__ import annotations
 import polars as pl
 
 from schenberg.core.graph import FormulaGraph
-from schenberg.core.market import curve
 from schenberg.domain.enums import SwapLegKind
-from schenberg.pricing.instruments.swap.legs.registry import register_leg
+from schenberg.pricing.instruments.swap.legs.registry import CURVES, register_leg
 
 cdi_cashflow_graph = FormulaGraph("cdi_cashflow")
 
@@ -25,5 +24,8 @@ cdi_swap_leg_graph = register_leg(
     SwapLegKind.CDI.value,
     name="cdi_swap_leg",
     cashflow=cdi_cashflow_graph,
-    market=[curve("zero_rate", "forward_rate")],
+    market={
+        "zero_rate": CURVES.value("zero_rate"),
+        "forward_rate": CURVES.value("forward_rate"),
+    },
 )
