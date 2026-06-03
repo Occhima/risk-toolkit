@@ -1,7 +1,7 @@
 {
   "name": "Schenberg Risk Toolkit",
   "build": {
-    "dockerfile": "Dockerfile",
+    "dockerfile": "../containers/Dockerfile",
     "context": ".."
   },
   "workspaceFolder": "/workspace/risk-toolkit",

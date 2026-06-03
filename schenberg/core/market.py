@@ -22,8 +22,8 @@ class MarketRequirement:
         return self.on.right_keys
 
 
-# Legacy requirement helpers retained for swap compatibility. New market-data
-# specs live under schenberg.market_data.* and should be preferred for pricing.
+# Requirement helpers for the swap legs. New market-data specs live under
+# schenberg.market_data.* and should be preferred for new instruments.
 def curve(
     *identity: str,
     indexer_col: str = "id_indexador",
@@ -69,29 +69,4 @@ def projected_index(
             (tenor_col, "tenor_days"),
         ),
         outputs={"projected_index": output},
-    )
-
-
-def energy_forward(
-    *,
-    submarket_col: str = "submarket",
-    period_col: str = "delivery_period",
-    outputs: dict[str, str] | None = None,
-) -> MarketRequirement:
-    out = outputs or {"forward_price": "forward_price", "settle_days": "payment_days"}
-    return MarketRequirement(
-        table="forward_curves",
-        on=ColumnSet.from_pairs(
-            (submarket_col, "submarket"),
-            (period_col, "delivery_period"),
-        ),
-        outputs=out,
-    )
-
-
-def fx(*, currency_col: str = "currency", output: str = "fx_rate") -> MarketRequirement:
-    return MarketRequirement(
-        table="fx_rates",
-        on=ColumnSet.from_pairs((currency_col, "currency")),
-        outputs={"fx_rate": output},
     )
