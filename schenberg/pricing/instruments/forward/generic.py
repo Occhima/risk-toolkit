@@ -2,7 +2,7 @@
 
 The graph stays boring and instrument-agnostic:
 
-``future_value -> present_value -> value``
+``forward_price - strike -> future_value -> present_value -> value``
 """
 
 from __future__ import annotations
@@ -13,6 +13,10 @@ from schenberg.core.graph import ExprGraph
 from schenberg.domain.schemas.forward import ForwardPricing
 from schenberg.market_data.curves.di import DiCurveSpec
 from schenberg.market_data.fx import FxRatesSpec
+from schenberg.math.expressions import (
+    continuous_discount_factor_expr,
+    year_fraction_252_expr,
+)
 
 DI = DiCurveSpec("di_curve")
 FX = FxRatesSpec("fx_rates")
@@ -27,7 +31,7 @@ forward_valuation_graph = ExprGraph("forward_valuation")
     description="252-day year fraction.",
 )
 def year_fraction(payment_days: pl.Expr) -> pl.Expr:
-    return payment_days / 252.0
+    return year_fraction_252_expr(payment_days)
 
 
 @forward_valuation_graph.node(
@@ -36,7 +40,16 @@ def year_fraction(payment_days: pl.Expr) -> pl.Expr:
     description="Continuously compounded discount factor.",
 )
 def discount_factor(zero_rate: pl.Expr, year_fraction: pl.Expr) -> pl.Expr:
-    return (-zero_rate * year_fraction).exp()
+    return continuous_discount_factor_expr(zero_rate, year_fraction)
+
+
+@forward_valuation_graph.node(
+    dtype=pl.Float64,
+    tags=("cashflow",),
+    description="Generic forward unit payoff.",
+)
+def future_value(forward_price: pl.Expr, strike: pl.Expr) -> pl.Expr:
+    return forward_price - strike
 
 
 @forward_valuation_graph.node(

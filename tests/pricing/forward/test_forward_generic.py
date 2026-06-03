@@ -8,10 +8,19 @@ import polars as pl
 import pytest
 from schenberg.market_data.snapshot import MarketSnapshot
 from schenberg.market_data.sources import MarketSource
-from schenberg.pricing.instruments.forward.generic import base_forward_graph
+from schenberg.pricing.instruments.forward.generic import (
+    base_forward_graph,
+    forward_valuation_graph,
+)
 
 
-def test_base_forward_graph_prices_existing_future_value() -> None:
+def test_forward_valuation_graph_defines_generic_payoff() -> None:
+    assert {"forward_price", "strike"}.issubset(
+        forward_valuation_graph.dependencies_of("future_value")
+    )
+
+
+def test_base_forward_graph_prices_generic_forward_spread() -> None:
     market = MarketSnapshot.from_sources(
         as_of=date(2026, 6, 3),
         sources=[
@@ -34,7 +43,8 @@ def test_base_forward_graph_prices_existing_future_value() -> None:
             "id_indexador": [1],
             "payment_days": [252],
             "currency": ["USD"],
-            "future_value": [100.0],
+            "forward_price": [120.0],
+            "strike": [20.0],
         }
     ).lazy()
 
@@ -43,6 +53,8 @@ def test_base_forward_graph_prices_existing_future_value() -> None:
         base_forward_graph.compute_for(forwards, market=market, output_profile="pricing").collect(),
     )
 
-    expected_pv = 100.0 * math.exp(-0.1)
+    expected_fv = 100.0
+    expected_pv = expected_fv * math.exp(-0.1)
+    assert out.select("future_value").item() == pytest.approx(expected_fv)
     assert out.select("present_value").item() == pytest.approx(expected_pv)
     assert out.select("value").item() == pytest.approx(expected_pv * 5.0)

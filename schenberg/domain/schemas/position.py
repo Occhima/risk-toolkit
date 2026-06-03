@@ -9,6 +9,7 @@ class Position(DataFrameModel):
     instrument_type: str
     instrument_id: str
     quantity: float
+    side: float
 
 
 class InstrumentPrice(DataFrameModel):

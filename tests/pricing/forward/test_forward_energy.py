@@ -20,20 +20,16 @@ def test_price_energy_forward_prices_normalized_rows_without_quantity(
     assert result.select("instrument_id").item() == "ENG-1"
     assert result.select("instrument_type").item() == "FORWARD"
     assert result.select("price").item() == pytest.approx(expected)
-    assert "mtm_local" not in result.columns
-    assert "mtm" not in result.columns
-    assert "quantity" not in result.columns
+    assert not set(result.columns) & {"mtm_local", "mtm", "quantity", "buy_sell"}
 
 
-def test_energy_core_pricer_has_no_explode_delivery_helper_or_quantity_dependency() -> None:
-    assert not hasattr(energy, "explode_delivery")
-    assert "quantity" not in energy_cashflow_dependencies()
+def test_energy_forward_graph_is_only_generic_graph_with_market_bindings() -> None:
+    assert not hasattr(energy, "energy_cashflow_graph")
+    assert not hasattr(energy, "pay_receive")
+    assert not hasattr(energy, "future_value")
     assert energy_forward_graph.output_dtypes("pricing").keys() == {
         "future_value",
         "present_value",
         "value",
     }
-
-
-def energy_cashflow_dependencies() -> set[str]:
-    return energy.energy_cashflow_graph.dependencies_of("future_value")
+    assert energy_forward_graph.dependencies_of("future_value") == {"forward_price", "strike"}

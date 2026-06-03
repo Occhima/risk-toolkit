@@ -14,12 +14,13 @@ def test_valuation_pipe_exposes_simplified_position_pricing_stages(energy_inputs
                 "instrument_type": "FORWARD",
                 "instrument_id": "ENG-1",
                 "quantity": 100.0,
+                "side": 1.0,
             }
         ]
     )
 
     env = valuation_pipe.run(forwards=energy_inputs, positions=positions, market=energy_market)
 
-    assert {"forward_prices", "prices", "priced_positions", "book_mtm"}.issubset(env)
-    assert valuation_pipe.order() == ["forward_prices", "prices", "priced_positions", "book_mtm"]
+    assert {"forward_prices", "priced_positions", "book_mtm"}.issubset(env)
+    assert valuation_pipe.order() == ["forward_prices", "priced_positions", "book_mtm"]
     assert env["book_mtm"].collect().select("mtm").item() == pytest.approx(4905.7467, rel=1e-6)

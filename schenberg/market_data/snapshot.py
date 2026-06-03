@@ -37,6 +37,11 @@ class MarketSnapshot:
     def attach(self, lf: pl.LazyFrame, req: MarketRequirement) -> pl.LazyFrame:
         src = self.source(req.table).data
         right = src.select([*req.right_keys, *req.outputs.keys()]).rename(req.outputs)
+        output_columns = set(req.outputs.values())
+        droppable = output_columns - set(req.left_keys)
+        collisions = sorted(droppable & set(lf.collect_schema().names()))
+        if collisions:
+            lf = lf.drop(collisions)
 
         return lf.join(
             right,

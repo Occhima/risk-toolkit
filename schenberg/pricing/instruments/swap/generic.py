@@ -8,18 +8,22 @@ from schenberg.core.graph import ExprGraph
 from schenberg.core.market import curve
 from schenberg.domain.enums import PayReceive
 from schenberg.domain.schemas import LegPricing
+from schenberg.math.expressions import (
+    continuous_discount_factor_expr,
+    year_fraction_252_expr,
+)
 
 swap_leg_valuation_graph = ExprGraph("swap_leg_valuation")
 
 
 @swap_leg_valuation_graph.node(dtype=pl.Float64, tags=("time",))
 def year_fraction(payment_days: pl.Expr) -> pl.Expr:
-    return payment_days / 252.0
+    return year_fraction_252_expr(payment_days)
 
 
 @swap_leg_valuation_graph.node(dtype=pl.Float64, tags=("discounting",))
 def discount_factor(zero_rate: pl.Expr, year_fraction: pl.Expr) -> pl.Expr:
-    return (-zero_rate * year_fraction).exp()
+    return continuous_discount_factor_expr(zero_rate, year_fraction)
 
 
 @swap_leg_valuation_graph.node(dtype=pl.Float64, tags=("direction",))

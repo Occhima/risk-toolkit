@@ -5,9 +5,9 @@ from dataclasses import dataclass
 import pandera.polars as pa
 from pandera.typing.polars import LazyFrame
 
-from schenberg.core.columns import ColumnSet
 from schenberg.core.market import MarketRequirement
 from schenberg.domain.schemas.market_data import EnergyForwardCurveContract
+from schenberg.market_data.requirements import require
 from schenberg.market_data.sources import MarketSource
 
 
@@ -23,12 +23,10 @@ class EnergyForwardCurveSpec:
         price_output: str = "forward_price",
         settle_days_output: str = "payment_days",
     ) -> MarketRequirement:
-        return MarketRequirement(
-            table=self.name,
-            on=ColumnSet.from_pairs(
-                (submarket_col, "submarket"),
-                (period_col, "delivery_period"),
-            ),
+        return require(
+            self.name,
+            (submarket_col, "submarket"),
+            (period_col, "delivery_period"),
             outputs={
                 "forward_price": price_output,
                 "settle_days": settle_days_output,

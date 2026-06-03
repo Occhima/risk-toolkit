@@ -10,7 +10,7 @@ from pandera.typing.polars import LazyFrame
 
 from schenberg.core.columns import cols
 from schenberg.core.graph import ExprGraph
-from schenberg.domain.enums import BuySell, ForwardFamily, InstrumentType, SettlementType
+from schenberg.domain.enums import ForwardFamily, InstrumentType, SettlementType
 from schenberg.domain.schemas.forward import EnergyForwardLeg, ForwardPricing, ForwardTrade
 from schenberg.domain.schemas.position import InstrumentPrice
 from schenberg.market_data.curves.di import DiCurveSpec
@@ -29,22 +29,6 @@ DI = DiCurveSpec("di_curve")
 ENERGY = EnergyForwardCurveSpec("energy_forward_curve")
 FX = FxRatesSpec("fx_rates")
 
-energy_cashflow_graph = ExprGraph("energy_forward_cashflow")
-
-
-@energy_cashflow_graph.node(tags=("energy", "cashflow"))
-def pay_receive(buy_sell: pl.Expr) -> pl.Expr:
-    return pl.when(buy_sell == BuySell.BUY.value).then(1.0).otherwise(-1.0)
-
-
-@energy_cashflow_graph.node(tags=("energy", "cashflow"))
-def future_value(
-    forward_price: pl.Expr,
-    strike: pl.Expr,
-    pay_receive: pl.Expr,
-) -> pl.Expr:
-    return pay_receive * (forward_price - strike)
-
 
 @forward_router.register(
     F.instrument_type == InstrumentType.FORWARD.value,
@@ -56,7 +40,6 @@ def energy_forward_graph() -> ExprGraph:
         ExprGraph.compose(
             "energy_forward",
             forward_valuation_graph,
-            energy_cashflow_graph,
         )
         .with_market(
             ENERGY.forward_price(),

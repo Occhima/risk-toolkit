@@ -16,7 +16,6 @@ class ForwardTrade(DataFrameModel):
 class EnergyForwardLeg(ForwardTrade):
     submarket: str
     delivery_period: str
-    buy_sell: str
     strike: float
 
 
