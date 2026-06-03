@@ -9,7 +9,7 @@ import polars as pl
 from pandera.typing.polars import LazyFrame
 
 from schenberg.core.columns import cols
-from schenberg.core.graph import ExprGraph
+from schenberg.core.graph import FormulaGraph
 from schenberg.domain.enums import ForwardFamily, InstrumentType, SettlementType
 from schenberg.domain.schemas.forward import EnergyForwardLeg, ForwardPricing, ForwardTrade
 from schenberg.domain.schemas.position import InstrumentPrice
@@ -48,23 +48,23 @@ def with_fixing_date(legs: pl.LazyFrame) -> pl.LazyFrame:
     return legs.with_columns(fixing_date)
 
 
-@forward_router.register(
+@forward_router.when(
     F.instrument_type == InstrumentType.FORWARD.value,
     F.forward_family == ForwardFamily.ENERGY.value,
     F.settlement_type == SettlementType.PHYSICAL.value,
 )
-def energy_forward_graph() -> ExprGraph:
+def energy_forward_graph() -> FormulaGraph:
     return (
-        ExprGraph.compose(
+        FormulaGraph.compose(
             "energy_forward",
             forward_valuation_graph,
         )
-        .with_market(
+        .uses_market(
             ENERGY.forward_price(),
             DI.zero_rate(),
             FX.fx_rate(),
         )
-        .with_outputs("pricing", ForwardPricing)
+        .returns("pricing", ForwardPricing)
     )
 
 
@@ -73,10 +73,10 @@ def price_energy_forward(
     legs: LazyFrame[EnergyForwardLeg],
     market: MarketSnapshot,
 ) -> LazyFrame[InstrumentPrice]:
-    priced = energy_forward_graph.compute_for(
+    priced = energy_forward_graph.compute(
         legs,
         market=market,
-        output_profile="pricing",
+        view="pricing",
     )
 
     result = (

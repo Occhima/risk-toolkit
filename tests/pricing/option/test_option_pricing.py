@@ -5,7 +5,7 @@ from typing import cast
 
 import polars as pl
 import pytest
-from schenberg.core.graph import ExprGraph
+from schenberg.core.graph import FormulaGraph
 from schenberg.market_data.interpolated import InterpolatedBook
 from schenberg.market_data.sources import MarketSource
 from schenberg.pricing.instruments.option import price_options, price_options_with_greeks
@@ -86,8 +86,8 @@ def _ncdf(x: float) -> float:
 
 
 def test_option_graph_declares_vol_surface() -> None:
-    graph = cast(ExprGraph, option_price_router.cases[0][1])
-    assert "vol" in graph.info(output_profile="price").market_outputs
+    graph = cast(FormulaGraph, option_price_router.cases[0][1])
+    assert "vol" in graph.info(view="price").market_outputs
 
 
 def test_price_options_with_greeks_returns_public_columns(option_inputs, option_market) -> None:

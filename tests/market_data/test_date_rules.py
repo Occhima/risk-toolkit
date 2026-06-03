@@ -76,7 +76,7 @@ def test_with_date_rule_is_a_thin_wrapper() -> None:
 
 
 def test_fixings_spec_value_creates_correct_requirement() -> None:
-    req = FixingsSpec().value(date_col="pca_fixing_date", output="pca_factor")
+    req = FixingsSpec().value(date="pca_fixing_date", output="pca_factor")
 
     assert req.table == "fixings"
     assert req.left_keys == ("id_indexador", "pca_fixing_date")
@@ -119,8 +119,8 @@ def test_derive_fixing_date_attach_and_stay_lazy() -> None:
     )
 
     req = FixingsSpec().value(
-        indexer_col="id_indexador",
-        date_col="pca_fixing_date",
+        indexer="id_indexador",
+        date="pca_fixing_date",
         output="pca_factor",
     )
 

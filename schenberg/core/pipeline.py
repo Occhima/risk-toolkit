@@ -1,6 +1,6 @@
-"""Pipe: a DAG of STAGES (the workflow layer).
+"""Workflow: a DAG of STAGES (the workflow layer).
 
-Same composition idea as ExprGraph (decorator + signature-inferred deps +
+Same composition idea as FormulaGraph (decorator + signature-inferred deps +
 rustworkx topo order), but nodes are stage functions returning LazyFrames, not
 pl.Expr. Use it when shapes change between steps — joins, group_by, repricing
 under a bumped market — i.e. things that can never be a single column expression.
@@ -18,7 +18,7 @@ from typing import Any
 import rustworkx as rx
 
 
-class Pipe:
+class Workflow:
     def __init__(self, name: str) -> None:
         self.name = name
         self._fns: dict[str, tuple[Callable[..., Any], tuple[str, ...]]] = {}
@@ -41,7 +41,7 @@ class Pipe:
                 if dep in idx:  # dep is another stage -> edge
                     g.add_edge(idx[dep], idx[nm], None)
         if not rx.is_directed_acyclic_graph(g):
-            raise ValueError(f"pipeline {self.name!r} has a cycle")
+            raise ValueError(f"workflow {self.name!r} has a cycle")
         self._order = [g[i] for i in rx.topological_sort(g)]
 
     def run(self, **inputs: Any) -> dict[str, Any]:

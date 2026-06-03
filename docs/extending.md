@@ -8,23 +8,22 @@ example.
 
 ## Add a new payoff: write a graph
 
-An instrument is "another graph". Define nodes whose parameter names are their
-dependencies, declare the market data the graph needs, and name an output
-profile:
+An instrument is "another graph". Define formulas whose parameter names are
+their dependencies, declare the market data the graph needs, and name a view:
 
 ```python
-g = ExprGraph("my_instrument")
+g = FormulaGraph("my_instrument")
 
-@g.node()
+@g.formula()
 def payoff(forward_price: pl.Expr, strike: pl.Expr) -> pl.Expr:
     return forward_price - strike
 
-g.with_outputs("pricing", value="payoff")
-g.with_market(require("a_curve", ("key", "key"), outputs={"price": "forward_price"}))
+g.returns("pricing", value="payoff")
+g.for_market(forward_price=CurveSpec("a_curve").value("price"))
 ```
 
-Reuse shared math from `schenberg.math.expressions`, and `compose()` existing
-graphs to inherit their nodes rather than copy them.
+Reuse shared math from `schenberg.math.expressions`, and `compose_with()`
+existing graphs to inherit their formulas rather than copy them.
 
 ## Add a new variant of the same payoff: route it
 
@@ -70,7 +69,7 @@ aggregates to the level you report at — mirroring the built-in pricers:
 ```python
 def price_my_instrument(legs, market):
     prepared = add_join_keys(legs)
-    priced = g.compute_for(prepared, market=market, output_profile="pricing")
+    priced = g.compute(prepared, market=market, view="pricing")
     return priced.group_by("instrument_id").agg(price=pl.col("value").sum())
 ```
 
@@ -98,10 +97,10 @@ router or graph change.
 2. Reference that column in the market requirement:
 
    ```python
-   graph.with_market(
+   graph.uses_market(
        FIXINGS.value(
-           indexer_col="id_indexador",
-           date_col="pca_fixing_date",
+           indexer="id_indexador",
+           date="pca_fixing_date",
            output="pca_factor",
        )
    )
@@ -134,11 +133,11 @@ with `instrument_type = "STRUCTURE"`.
 
 ## Checklist
 
-- [ ] New math → a graph (`ExprGraph`), reusing `compose()` / shared expressions.
+- [ ] New math → a graph (`FormulaGraph`), reusing `compose_with()` / shared expressions.
 - [ ] Per-row formula forks → a `Router`; pure value differences → a join key.
 - [ ] Join keys not in the raw input → a transform/stage *before* the graph.
 - [ ] Index/convention differences → a data registry, extended by one row.
-- [ ] Fixing-date convention → `date_rules` expression, not a router node.
+- [ ] Fixing-date convention → `date_rules` expression, not a router case.
 - [ ] Structured product → `price_structures`, not a new graph or router.
 - [ ] Public function returns a lazy frame; `collect()` stays the caller's call.
 - [ ] Boundary typed with a Pandera schema; internals stay plain Polars.

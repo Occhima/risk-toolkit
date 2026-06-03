@@ -40,14 +40,14 @@ def aggregate_swap_pv(priced_legs: pl.LazyFrame) -> pl.LazyFrame:
 
 @pa.check_types(lazy=True)
 def price_swaps(
-    legs: LazyFrame[SwapLegInput], market: MarketSnapshot, *, output_profile: str = "pricing"
+    legs: LazyFrame[SwapLegInput], market: MarketSnapshot, *, view: str = "pricing"
 ) -> LazyFrame[SwapOutput]:
-    priced = swap_leg_router.compute_for(legs, market=market, output_profile=output_profile)
+    priced = swap_leg_router.compute(legs, market=market, view=view)
     return cast(LazyFrame[SwapOutput], aggregate_swap_pv(priced))
 
 
 @pa.check_types(lazy=True)
 def price_swap(
-    legs: LazyFrame[SwapLegInput], market: MarketSnapshot, *, output_profile: str = "pricing"
+    legs: LazyFrame[SwapLegInput], market: MarketSnapshot, *, view: str = "pricing"
 ) -> LazyFrame[SwapOutput]:
-    return price_swaps(legs, market, output_profile=output_profile)
+    return price_swaps(legs, market, view=view)

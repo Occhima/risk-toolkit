@@ -58,7 +58,7 @@ def test_ipca_leg_pricing_preserves_formula() -> None:
 
     out = cast(
         pl.DataFrame,
-        ipca_swap_leg_graph.compute_for(leg, market=market, output_profile="pricing").collect(),
+        ipca_swap_leg_graph.compute(leg, market=market, view="pricing").collect(),
     )
 
     cashflow = 1_000_000.0 * 1.06 * 1.02 - 1_000_000.0

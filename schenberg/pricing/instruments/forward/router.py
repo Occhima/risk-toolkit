@@ -9,7 +9,7 @@ from schenberg.pricing.instruments.forward.generic import base_forward_graph
 
 F = cols(ForwardTrade)
 
-forward_router = Router.by(
+forward_router = Router.on(
     F.instrument_type,
     F.forward_family,
     F.settlement_type,

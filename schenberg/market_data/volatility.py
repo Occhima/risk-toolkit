@@ -10,10 +10,13 @@ declaration idiom used by the option graphs.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import overload
 
 import pandera.polars as pa
 from pandera.typing.polars import LazyFrame
 
+from schenberg.core.columns import ColumnLike
+from schenberg.core.market import MarketRead
 from schenberg.domain.schemas.market_data import VolSurfaceContract
 from schenberg.market_data.interpolated import InterpolatedRequirement, InterpolatedSpec
 from schenberg.market_data.sources import MarketSource
@@ -23,20 +26,38 @@ from schenberg.market_data.sources import MarketSource
 class VolSurfaceSpec:
     name: str = "vol_surface"
 
+    @overload
     def implied_vol(
         self,
         *,
-        indexer_col: str = "id_indexador",
-        tenor_col: str = "payment_days",
-        strike_col: str = "strike",
-        output: str = "vol",
-    ) -> InterpolatedRequirement:
-        return InterpolatedSpec(self.name, axes=("tenor_days", "strike")).value(
-            "implied_vol",
-            output=output,
-            on=(tenor_col, strike_col),
-            group_col=indexer_col,
-        )
+        indexer: ColumnLike = ...,
+        tenor: ColumnLike = ...,
+        strike: ColumnLike = ...,
+        output: str,
+    ) -> InterpolatedRequirement: ...
+
+    @overload
+    def implied_vol(
+        self,
+        *,
+        indexer: ColumnLike = ...,
+        tenor: ColumnLike = ...,
+        strike: ColumnLike = ...,
+        output: None = None,
+    ) -> MarketRead: ...
+
+    def implied_vol(
+        self,
+        *,
+        indexer: ColumnLike = "id_indexador",
+        tenor: ColumnLike = "payment_days",
+        strike: ColumnLike = "strike",
+        output: str | None = None,
+    ) -> MarketRead | InterpolatedRequirement:
+        spec = InterpolatedSpec(self.name, axes=("tenor_days", "strike"))
+        if output is None:
+            return spec.value("implied_vol", on=(tenor, strike), group_col=indexer)
+        return spec.value("implied_vol", output=output, on=(tenor, strike), group_col=indexer)
 
 
 @dataclass(frozen=True, slots=True)

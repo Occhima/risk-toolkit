@@ -34,6 +34,17 @@ class RoutePredicate:
         raise ValueError(f"unsupported route operation: {self.op!r}")
 
 
+# A column may be referenced either by its plain string name or by a
+# schema-derived ColumnRef. Market specs accept either so call sites can stay
+# terse: ``VOL.implied_vol(strike=OPT.strike)`` instead of ``strike=OPT.strike.name``.
+ColumnLike = str | ColumnRef
+
+
+def col_name(col: ColumnLike) -> str:
+    """Normalize a string-or-ColumnRef to its column name."""
+    return col.name if isinstance(col, ColumnRef) else col
+
+
 class SchemaColumns:
     def __init__(self, schema: type[Any]) -> None:
         self._schema = schema

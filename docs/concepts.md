@@ -8,62 +8,78 @@ expression and never collects until you ask. This page is the mental model.
 
 | Block | What it is | When you reach for it |
 |-------|------------|-----------------------|
-| **`ExprGraph`** | A DAG of row-local formulas that compiles to one nested `pl.Expr`. | Math where the shape doesn't change: discounting, payoffs, factors. |
+| **`FormulaGraph`** | A DAG of row-local formulas that compiles to one nested `pl.Expr`. | Math where the shape doesn't change: discounting, payoffs, factors. |
 | **`Router`** | Splits rows by predicate and sends each subset to a different pricer. | The *formula* differs per row (instrument family, option kind, ...). |
-| **`MarketSnapshot`** | Named market sources + declarative `require(...)` joins. | Pulling curves/fixings/FX onto the trade rows by key. |
-| **`Pipe`** | A DAG of *stages* returning LazyFrames. | Steps that change shape: joins, group-bys, repricing under a bumped market. |
+| **`MarketSnapshot`** | Named market sources + declarative market reads. | Pulling curves/fixings/FX onto the trade rows by key. |
+| **`Workflow`** | A DAG of *stages* returning LazyFrames. | Steps that change shape: joins, group-bys, repricing under a bumped market. |
 
 Everything stays lazy. `collect()` is yours to call, once, at the edge.
 
-## ExprGraph: formulas as a graph
+## FormulaGraph: formulas as a graph
 
-A node is a function whose **parameter names are its dependencies**. You never
+A formula is a function whose **parameter names are its dependencies**. You never
 wire edges by hand — the engine reads them from the signature.
 
 ```python
-from schenberg.core.graph import ExprGraph
+from schenberg.core.graph import FormulaGraph
 import polars as pl
 
-g = ExprGraph("demo")
+g = FormulaGraph("demo")
 
-@g.node()
+@g.formula()
 def year_fraction(payment_days: pl.Expr) -> pl.Expr:
     return payment_days / 252.0
 
-@g.node()
+@g.formula()
 def discount_factor(zero_rate: pl.Expr, year_fraction: pl.Expr) -> pl.Expr:
     return (-zero_rate * year_fraction).exp()
 ```
 
 `discount_factor` depends on `zero_rate` (an input column) and `year_fraction`
-(another node). `g.compute_for(lf, ...)` compiles the requested outputs into one
-`with_columns` call. Intermediates are shared across outputs via a compile cache.
+(another formula). You name the output columns a graph exposes with `returns`
+(each named set is a *view*), then `g.compute(frame, view="...")` compiles the
+requested view into one `with_columns` call. Intermediates are shared across
+outputs via a compile cache.
+
+```python
+g.returns("pricing", discount_factor="discount_factor")
+priced = g.compute(frame, market=market, view="pricing")
+```
 
 Useful introspection, all derived from the graph itself (so it can't drift):
 
 - `g.dependencies_of("discount_factor")` → the transitive inputs.
 - `g.required_inputs()` → the columns a caller must supply.
 - `g.to_mermaid()` → a diagram of the DAG.
-- `g.stage(lf, ...)` → materialize *every* intermediate as its own column for
+- `g.stage(frame, ...)` → materialize *every* intermediate as its own column for
   debugging; nulls propagate, so the first unexpectedly-null column is the root
   cause.
 
 ## MarketSnapshot: declarative market data
 
-A graph declares *what* market data it needs; the snapshot supplies *where* it
-comes from. `require(...)` is a left join described by key bindings.
+A graph declares *what* market data it needs with `for_market`; the snapshot
+supplies *where* it comes from. Each keyword is the **output column** the read
+writes onto the frame:
 
 ```python
-g.with_market(
-    require("di_curve", ("id_indexador", "id_indexador"), ("payment_days", "tenor_days"),
-            outputs={"zero_rate": "zero_rate"}),
+from schenberg.market_data.curves import CurveSpec
+
+CURVES = CurveSpec("curves")
+
+g.for_market(
+    rate=CURVES.value("zero_rate", indexer="id_indexador", tenor="payment_days"),
 )
 ```
+
+`CURVES.value(...)` with no `output=` returns a `MarketRead` whose output column
+is finalized from the keyword (`rate`). Pass `output=` to get a fully built
+`MarketRequirement`, or attach fixed-output dependencies through the lower-level
+`g.uses_market(req1, req2)` escape hatch.
 
 At pricing time the engine attaches the market **before** compiling formulas, so
 **join keys must already be columns** on the input frame. Anything that derives
 a join key (normalizing wide rows into legs, computing a reference date) is a
-*pre-step* — a plain transform or a `Pipe` stage — not a graph node.
+*pre-step* — a plain transform or a `Workflow` stage — not a formula.
 
 ## Router vs data
 
@@ -80,18 +96,24 @@ and let the join pick the right rows per instrument. Even a convention that
 still data when it reduces to a different *value* in a column — see the
 [custom instrument example](../examples/custom_instrument/README.md).
 
-Reach for a `Router` when the math genuinely forks:
+Reach for a `Router` when the math genuinely forks. Build it with `Router.on`
+over the route columns, then register cases with the `case` decorator (equality
+on the route columns) or `when` (arbitrary predicates):
 
 ```python
 from schenberg.core.router import Router
 from schenberg.core.columns import cols
 
 R = cols(MySchema)
-router = Router.by(R.instrument_family).default(generic_graph)
+router = Router.on(R.instrument_family).default(generic_graph)
 
-@router.register(R.instrument_family == "ENERGY")
+@router.case("ENERGY")
 def energy_graph():
-    return ExprGraph.compose("energy", base).with_market(...)
+    return FormulaGraph.compose("energy", base).uses_market(...)
+
+@router.when(R.instrument_family == "EXOTIC", R.tenor_days > 365)
+def long_dated_exotic():
+    return exotic_graph
 ```
 
 Unmatched rows fall to `.default(...)`. The fallback is **permissive by
@@ -108,10 +130,10 @@ still giving callers a typed contract.
 ## Layers
 
 ```
-domain/        Pandera boundary schemas + enums            (no deps)
-core/          ExprGraph, Router, MarketRequirement, Pipe  (the engine)
-market_data/   MarketSnapshot, sources, curve specs, shocks
-pricing/       instruments (swap, forward, ...) + portfolio
+domain/        Pandera boundary schemas + enums                  (no deps)
+core/          FormulaGraph, Router, MarketRequirement, Workflow (the engine)
+market_data/   MarketSnapshot, sources, curve/vol specs, shocks
+pricing/       instruments (swap, forward, option, ...) + portfolio
 ```
 
 Dependencies point downward only: `pricing → market_data → core → domain`.
@@ -120,13 +142,13 @@ Dependencies point downward only: `pricing → market_data → core → domain`.
 
 Market data belongs in market specs, not in pricing-facade enrichment. Curves,
 fixings, dividends, carry curves and implied-volatility surfaces are all declared
-by the graph through `with_market(...)`; pricing functions orchestrate contracts
+by the graph through `for_market(...)`; pricing functions orchestrate contracts
 and select public columns.
 
-A volatility surface is a custom attachable market dependency because the lookup
-is interpolation over `(id_indexador, tenor_days, strike)`, not a simple left
-join. The caller supplies the surface as a `MarketSource` through
-`VolSurfaces.source()`, and the option graph declares the implied-vol column:
+A volatility surface is interpolated over `(id_indexador, tenor_days, strike)`,
+not a simple left join. The caller supplies the surface as a `MarketSource`
+through `VolSurfaces.source()`, and the option graph declares the implied-vol
+column:
 
 ```python
 from schenberg.core.columns import cols
@@ -136,36 +158,54 @@ from schenberg.market_data.volatility import VolSurfaceSpec
 OPT = cols(OptionTrade)
 VOL = VolSurfaceSpec("vol_surface")
 
-graph.with_market(
-    VOL.implied_vol(
-        indexer_col=OPT.id_indexador.name,
-        tenor_col=OPT.payment_days.name,
-        strike_col=OPT.strike.name,
-        output="vol",
+graph.for_market(
+    vol=VOL.implied_vol(
+        indexer=OPT.id_indexador,
+        tenor=OPT.payment_days,
+        strike=OPT.strike,
     )
 )
 ```
 
-`price_options(...)` is price-only and returns the public `OptionPrice` contract.
-`price_options_with_greeks(...)` is the separate public path for sensitivities.
-Closed-form Greeks are a graph composition on top of the option price graph;
-numeric and autodiff Greeks consume an explicit priced-state contract containing
-price inputs and derived BSM terms.
+`price_options(...)` is price-only and returns the public `OptionPrice` contract
+(view `price`). `price_options_with_greeks(...)` is the separate public path for
+sensitivities. Closed-form Greeks are a graph composition on top of the option
+price graph (view `risk`); numeric and autodiff Greeks consume an explicit
+priced-state contract (view `state`) containing price inputs and derived BSM
+terms.
 
 ## Graph documentation and debugging
 
 Formula metadata is documentation/introspection only; it does not parse Polars
-expressions and does not change execution. Nodes may carry a `symbol` and
-`formula`, then the graph can explain itself:
+expressions and does not change execution. Formulas may carry a `symbol` and a
+`latex` math representation, then the graph can explain itself:
 
-- `graph.formula_of("d1")` returns the math label for one node.
-- `graph.formulas()` returns formulas for formula nodes.
-- `graph.info(output_profile="priced_state")` summarizes required inputs,
-  market inputs/outputs, formula nodes and selected outputs.
-- `graph.explain(output_profile="priced_state")` prints the dependency path in
-  topological order.
-- `graph.to_mermaid(math_labels=True, show_kinds=True)` emits a Mermaid diagram
-  with formula labels and simple node classes.
+- `graph.formula_of("d1")` returns the math label for one formula.
+- `graph.formulas()` returns labels for every formula.
+- `graph.info(view="state")` summarizes required inputs, market inputs/outputs,
+  formula nodes and the selected view.
+- `graph.explain(view="state")` prints the dependency path in topological order.
+- `graph.to_mermaid(math_labels=True, show_kinds=True, view="state")` emits a
+  Mermaid diagram with formula labels and simple node classes.
+- `graph.view_dtypes("state")` is the declared dtype contract for a view.
 
 Use `graph.stage(...)` when you need materialized intermediate columns for null
 or data-quality debugging; it remains the low-level LazyFrame inspection tool.
+
+## Migration from the early API
+
+This is an early library and the public vocabulary was simplified in a breaking
+refactor. The mapping:
+
+```text
+ExprGraph        -> FormulaGraph
+.node            -> .formula
+formula=         -> latex=
+.with_outputs    -> .returns
+output_profile=  -> view=
+.compute_for     -> .compute
+.with_market     -> .for_market   (positional reqs -> .uses_market)
+Pipe             -> Workflow
+Router.by        -> Router.on
+Router.register  -> Router.case / Router.when
+```

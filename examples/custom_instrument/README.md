@@ -42,7 +42,7 @@ The work splits into three small pieces, each in its own file:
    in `CONVENTIONS`; nothing else changes.
 
 2. **`graph.py` — "another graph".** Seven nodes wired by parameter name on the
-   same `ExprGraph` engine the built-ins use, declaring exactly the market data
+   same `FormulaGraph` engine the built-ins use, declaring exactly the market data
    it needs via `require(...)`. Crucially, the inflation curve is joined on
    `(id_indexador, reference_date)` — the convention date *is* the selector.
 

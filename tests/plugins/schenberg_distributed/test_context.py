@@ -4,7 +4,7 @@ from collections.abc import Mapping
 from typing import Any, cast
 
 import polars as pl
-from schenberg.core.graph import ExprGraph
+from schenberg.core.graph import FormulaGraph
 
 from schenberg_distributed import (
     PricingExecutionContext,
@@ -23,9 +23,9 @@ def test_local_context_forwards_collect_kwargs() -> None:
 
 
 def test_compute_graph_pricing_collects_formula_outputs() -> None:
-    graph = ExprGraph("test_pricing")
+    graph = FormulaGraph("test_pricing")
 
-    @graph.node()
+    @graph.formula()
     def value(quantity: pl.Expr, price: pl.Expr) -> pl.Expr:
         return quantity * price
 

@@ -1,10 +1,10 @@
 # Core Engine
 
-The four primitives that power all pricing in Schenberg.
+The primitives that power all pricing in Schenberg.
 
-## ExprGraph
+## FormulaGraph
 
-::: schenberg.core.graph.ExprGraph
+::: schenberg.core.graph.FormulaGraph
 
 ## Router
 
@@ -14,9 +14,13 @@ The four primitives that power all pricing in Schenberg.
 
 ::: schenberg.core.market.MarketRequirement
 
-## Pipe
+## MarketRead
 
-::: schenberg.core.pipeline.Pipe
+::: schenberg.core.market.MarketRead
+
+## Workflow
+
+::: schenberg.core.pipeline.Workflow
 
 ## Columns
 

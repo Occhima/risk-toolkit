@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import polars as pl
 
-from schenberg.core.pipeline import Pipe
+from schenberg.core.pipeline import Workflow
 from schenberg.position.functions import with_prices
 from schenberg.pricing.instruments.forward.prices import price_forward_instruments
 
-valuation_pipe = Pipe("valuation")
+valuation_pipe = Workflow("valuation")
 
 
 @valuation_pipe.stage

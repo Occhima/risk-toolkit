@@ -27,7 +27,7 @@ def test_energy_forward_graph_is_only_generic_graph_with_market_bindings() -> No
     assert not hasattr(energy, "energy_cashflow_graph")
     assert not hasattr(energy, "pay_receive")
     assert not hasattr(energy, "future_value")
-    assert energy_forward_graph.output_dtypes("pricing").keys() == {
+    assert energy_forward_graph.view_dtypes("pricing").keys() == {
         "future_value",
         "present_value",
         "value",

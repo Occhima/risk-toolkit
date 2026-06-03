@@ -11,16 +11,19 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from inspect import signature
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import polars as pl
 import rustworkx as rx
 
-from schenberg.market_data.snapshot import MarketSnapshot
+from schenberg.core.columns import ColumnRef, col_name
 
-from .market import MarketDependency
+from .market import MarketDependency, MarketRead
 
-ExprFn = Callable[..., pl.Expr]
+if TYPE_CHECKING:
+    from schenberg.market_data.snapshot import MarketSnapshot
+
+FormulaFn = Callable[..., pl.Expr]
 
 
 class NodeKind(StrEnum):
@@ -29,16 +32,16 @@ class NodeKind(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
-class ExprNode:
+class FormulaNode:
     name: str
     kind: NodeKind
     deps: tuple[str, ...] = ()
-    fn: ExprFn | None = None
+    fn: FormulaFn | None = None
     dtype: Any | None = None
     tags: tuple[str, ...] = ()
     description: str | None = None
     symbol: str | None = None
-    formula: str | None = None
+    latex: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,28 +52,41 @@ class GraphInfo:
     market_outputs: tuple[str, ...]
     formula_nodes: tuple[str, ...]
     intermediate_nodes: tuple[str, ...]
-    output_nodes: dict[str, str]
-    output_dtypes: dict[str, Any | None]
+    view_nodes: dict[str, str]
+    view_dtypes: dict[str, Any | None]
 
 
-class ExprGraph:
+class FormulaGraph:
     """A semantic formula DAG that compiles into Polars expressions.
 
     rustworkx owns the topology (cycle checks, topo order, ancestors); Polars
     owns execution. Edge direction is dependency -> dependent.
+
+    Declare formulas with the :meth:`formula` decorator, the market data they
+    read with :meth:`for_market`, and the named output column sets (*views*)
+    they expose with :meth:`returns`. ``compute(frame, view=...)`` then compiles
+    one view into a single lazy ``with_columns``.
     """
 
-    def __init__(self, name: str) -> None:
+    def __init__(
+        self,
+        name: str,
+        *,
+        returns: object | None = None,
+        view: str = "result",
+    ) -> None:
         self.name = name
         self._graph: rx.PyDiGraph = rx.PyDiGraph(multigraph=False)
         self._indices: dict[str, int] = {}  # node name -> rustworkx index
         self._input_aliases: dict[str, str] = {}  # dep name -> concrete node name
-        self._output_profiles: dict[str, dict[str, str]] = {}  # profile -> {out_col: node_name}
+        self._views: dict[str, dict[str, str]] = {}  # view -> {out_col: node_name}
         self._market: list[MarketDependency] = []
+        if returns is not None:
+            self.returns(view, returns)
 
     # ---- construction ----------------------------------------------------
 
-    def node(
+    def formula(
         self,
         *,
         dtype: Any = pl.Float64,
@@ -78,13 +94,18 @@ class ExprGraph:
         description: str | None = None,
         name: str | None = None,
         symbol: str | None = None,
-        formula: str | None = None,
-    ):
-        """Decorator. Dependencies are inferred from the parameter names."""
+        latex: str | None = None,
+    ) -> Callable[[FormulaFn], FormulaFn]:
+        """Decorator. Dependencies are inferred from the parameter names.
 
-        def register(fn: ExprFn) -> ExprFn:
+        ``latex`` is an optional math representation used purely for
+        introspection (``formula_of``, ``explain``, Mermaid labels); it never
+        affects execution.
+        """
+
+        def register(fn: FormulaFn) -> FormulaFn:
             self._register(
-                ExprNode(
+                FormulaNode(
                     name=name or fn.__name__,  # ty: ignore[unresolved-attribute]
                     kind=NodeKind.FORMULA,
                     deps=tuple(signature(fn).parameters),
@@ -93,14 +114,14 @@ class ExprGraph:
                     tags=tuple(tags),
                     description=description,
                     symbol=symbol,
-                    formula=formula,
+                    latex=latex,
                 )
             )
             return fn
 
         return register
 
-    def _register(self, node: ExprNode) -> None:
+    def _register(self, node: FormulaNode) -> None:
         if node.name in self._indices:
             raise ValueError(f"node {node.name!r} already defined in graph {self.name!r}")
         idx = self._graph.add_node(node)
@@ -112,7 +133,7 @@ class ExprGraph:
     def _ensure_input(self, name: str) -> int:
         idx = self._indices.get(name)
         if idx is None:
-            idx = self._graph.add_node(ExprNode(name, NodeKind.INPUT))
+            idx = self._graph.add_node(FormulaNode(name, NodeKind.INPUT))
             self._indices[name] = idx
         return idx
 
@@ -122,47 +143,77 @@ class ExprGraph:
 
     # ---- configuration (chainable) ---------------------------------------
 
-    def with_market(self, *requirements: MarketDependency) -> ExprGraph:
+    def for_market(self, **reads: MarketRead | MarketDependency) -> FormulaGraph:
+        """Declare market data, naming each output column by its keyword.
+
+        Each keyword is the output column the read writes onto the frame. Pass
+        either a :class:`MarketRead` (a spec whose output is finalized here) or a
+        fully built :class:`MarketDependency` (whose fixed output must match the
+        keyword)::
+
+            graph.for_market(
+                rate=CURVES.value("zero_rate", indexer=OPT.id_indexador, ...),
+                vol=VOL.implied_vol(indexer=OPT.id_indexador, ...),
+            )
+        """
+        for output, read in reads.items():
+            if isinstance(read, MarketRead):
+                self._market.append(read.as_output(output))
+            elif output in set(read.outputs.values()):
+                self._market.append(read)
+            else:
+                raise ValueError(
+                    f"market dependency for {output!r} already outputs "
+                    f"{sorted(read.outputs.values())}; use uses_market(...) for "
+                    f"fixed-output dependencies"
+                )
+        return self
+
+    def uses_market(self, *requirements: MarketDependency) -> FormulaGraph:
+        """Lower-level escape hatch: attach fully built market dependencies whose
+        output columns are already fixed."""
         self._market.extend(requirements)
         return self
 
-    def with_inputs(self, **aliases: str) -> ExprGraph:
+    def with_inputs(self, **aliases: str) -> FormulaGraph:
         """Redirect a dependency name to a concrete node, e.g.
         with_inputs(signed_cashflow="cdi_signed_cashflow")."""
         self._input_aliases.update(aliases)
         return self
 
-    def with_outputs(
+    def returns(
         self,
-        profile: str,
+        view: str,
         schema: object | None = None,
         /,
-        **overrides: str,
-    ) -> ExprGraph:
-        """Name a set of output columns: out_column -> node_name.
+        **overrides: str | ColumnRef,
+    ) -> FormulaGraph:
+        """Name a set of output columns (a *view*): out_column -> node_name.
 
         Two forms:
-          with_outputs("pricing", year_fraction="year_fraction", pv="leg_pv")
-          with_outputs("pricing", LegPricing, pv="leg_pv")   # schema-driven
+          returns("pricing", year_fraction="year_fraction", pv="leg_pv")
+          returns("pricing", LegPricing, pv="leg_pv")   # schema-driven
 
         With a schema (any object exposing .to_schema().columns.keys(), e.g. a
         Pandera DataFrameModel), each field maps identity to a node of the same
         name; pass overrides only where the feeding node name differs. The
         schema is duck-typed so the engine stays free of a Pandera dependency.
+        Override values may be plain names or :class:`ColumnRef`.
         """
+        resolved = {col: col_name(node) for col, node in overrides.items()}
         if schema is not None:
             typed_schema = cast(Any, schema)
             fields = list(typed_schema.to_schema().columns.keys())
-            mapping = {f: overrides.get(f, f) for f in fields}
+            mapping = {f: resolved.get(f, f) for f in fields}
         else:
-            mapping = dict(overrides)
-        self._output_profiles[profile] = mapping
+            mapping = resolved
+        self._views[view] = mapping
         return self
 
     # ---- composition -----------------------------------------------------
 
     @classmethod
-    def compose(cls, name: str, *graphs: ExprGraph) -> ExprGraph:
+    def compose(cls, name: str, *graphs: FormulaGraph) -> FormulaGraph:
         """Merge several graphs into a new one (inputs do not mutate).
 
         Two-pass build so registration order never matters: collect formulas,
@@ -172,7 +223,7 @@ class ExprGraph:
         formulas under the same name is a hard conflict.
         """
         merged = cls(name)
-        formulas: dict[str, ExprNode] = {}
+        formulas: dict[str, FormulaNode] = {}
         for g in graphs:
             for idx in g._indices.values():
                 node = g._graph[idx]
@@ -195,6 +246,12 @@ class ExprGraph:
                 merged._graph.add_edge(merged._indices[dep], merged._indices[node.name], None)
         merged._validate_dag()
         return merged
+
+    def compose_with(self, *others: FormulaGraph, name: str | None = None) -> FormulaGraph:
+        """Ergonomic composition: ``a.compose_with(b, name="ab")`` merges ``a``
+        and ``b`` into a fresh graph (``self`` first), defaulting the new name to
+        ``self.name``."""
+        return type(self).compose(name or self.name, self, *others)
 
     # ---- compilation -----------------------------------------------------
 
@@ -244,43 +301,47 @@ class ExprGraph:
         cache[target] = result
         return result
 
-    def compute_for(
+    def compute(
         self,
-        lf: pl.LazyFrame,
+        frame: pl.LazyFrame,
         *,
         market: MarketSnapshot | None = None,
         outputs: Mapping[str, str] | None = None,
-        output_profile: str | None = None,
+        view: str | None = None,
     ) -> pl.LazyFrame:
         """Attach market data (if required), compile each output to a nested
-        expression, add them with one with_columns. Stays lazy."""
-        lf = self._attach_market(lf, market)
-        mapping = self._resolve_outputs(outputs, output_profile)
-        lf = self._with_missing_inputs(lf, mapping.values())
+        expression, add them with one with_columns. Stays lazy.
+
+        Pass a named ``view`` (declared via :meth:`returns`) or, as an escape
+        hatch, an explicit ``outputs`` mapping of out_column -> node_name.
+        """
+        frame = self._attach_market(frame, market)
+        mapping = self._resolve_view(outputs, view)
+        frame = self._with_missing_inputs(frame, mapping.values())
         cache: dict[str, pl.Expr] = {}  # share intermediates across outputs
         columns = [self.expr(node, _cache=cache).alias(col) for col, node in mapping.items()]
-        return lf.with_columns(columns)
+        return frame.with_columns(columns)
 
     def stage(
         self,
-        lf: pl.LazyFrame,
+        frame: pl.LazyFrame,
         *,
         market: MarketSnapshot | None = None,
-        output_profile: str | None = None,
+        view: str | None = None,
         targets: list[str] | None = None,
     ) -> pl.LazyFrame:
         """Analysis mode: materialize every intermediate node as its own column.
-        Wider/slower than compute_for, but every step is inspectable. Stays lazy.
+        Wider/slower than compute, but every step is inspectable. Stays lazy.
 
         Debug workflow: graph.stage(...).collect().null_count() -- nulls
         propagate, so the first column that is unexpectedly null is the root
         cause (e.g. null zero_rate => failed curve join).
         """
-        lf = self._attach_market(lf, market)
+        frame = self._attach_market(frame, market)
         if targets is None:
-            if output_profile is None:
-                raise ValueError("pass targets=[...] or output_profile=...")
-            targets = list(self._output_profiles[output_profile].values())
+            if view is None:
+                raise ValueError("pass targets=[...] or view=...")
+            targets = list(self._views[view].values())
 
         order: list[str] = []
         seen: set[str] = set()
@@ -303,8 +364,8 @@ class ExprGraph:
         for name in order:
             node = self._graph[self._indices[name]]
             cols = [pl.col(self._resolve(d)) for d in node.deps]
-            lf = lf.with_columns(node.fn(*cols).alias(name))
-        return lf
+            frame = frame.with_columns(node.fn(*cols).alias(name))
+        return frame
 
     def _attach_market(self, lf: pl.LazyFrame, market: MarketSnapshot | None) -> pl.LazyFrame:
         if self._market:
@@ -329,17 +390,15 @@ class ExprGraph:
             return lf
         return lf.with_columns(pl.lit(None).alias(name) for name in missing)
 
-    def _resolve_outputs(
-        self, outputs: Mapping[str, str] | None, profile: str | None
-    ) -> dict[str, str]:
+    def _resolve_view(self, outputs: Mapping[str, str] | None, view: str | None) -> dict[str, str]:
         if outputs is not None:
             return dict(outputs)
-        if profile is not None:
+        if view is not None:
             try:
-                return dict(self._output_profiles[profile])
+                return dict(self._views[view])
             except KeyError:
-                raise KeyError(f"no output profile {profile!r} in graph {self.name!r}") from None
-        raise ValueError("pass outputs={...} or output_profile=...")
+                raise KeyError(f"no view {view!r} in graph {self.name!r}") from None
+        raise ValueError("pass outputs={...} or view=...")
 
     # ---- introspection ---------------------------------------------------
 
@@ -367,8 +426,8 @@ class ExprGraph:
         if node.kind is NodeKind.INPUT:
             return node.symbol or node.name
         lhs = node.symbol or node.name
-        if node.formula:
-            return f"{lhs} = {node.formula}"
+        if node.latex:
+            return f"{lhs} = {node.latex}"
         deps = ", ".join(node.deps)
         return f"{lhs} = \\operatorname{{{node.name}}}({deps})"
 
@@ -384,11 +443,9 @@ class ExprGraph:
         *,
         math_labels: bool = False,
         show_kinds: bool = False,
-        output_profile: str | None = None,
+        view: str | None = None,
     ) -> str:
-        output_nodes = (
-            set(self._output_profiles.get(output_profile, {}).values()) if output_profile else set()
-        )
+        view_nodes = set(self._views.get(view, {}).values()) if view else set()
 
         def label(name: str) -> str:
             if not math_labels:
@@ -412,15 +469,15 @@ class ExprGraph:
                     classes.append("formula")
                 if name in market_outputs:
                     classes.append("market")
-                if name in output_nodes:
+                if name in view_nodes:
                     classes.append("output")
                 for cls in classes:
                     lines.append(f"    class {name} {cls}")
         return "\n".join(lines)
 
-    def info(self, *, output_profile: str | None = None) -> GraphInfo:
-        output_nodes = self._resolve_outputs(None, output_profile) if output_profile else {}
-        selected = set(output_nodes.values())
+    def info(self, *, view: str | None = None) -> GraphInfo:
+        view_nodes = self._resolve_view(None, view) if view else {}
+        selected = set(view_nodes.values())
         formula_nodes = tuple(
             name
             for name in self.topological_order()
@@ -435,19 +492,19 @@ class ExprGraph:
             ),
             formula_nodes=formula_nodes,
             intermediate_nodes=tuple(name for name in formula_nodes if name not in selected),
-            output_nodes=output_nodes,
-            output_dtypes=self.output_dtypes(output_profile) if output_profile else {},
+            view_nodes=view_nodes,
+            view_dtypes=self.view_dtypes(view) if view else {},
         )
 
-    def explain(self, target: str | None = None, *, output_profile: str | None = None) -> str:
-        if target is None and output_profile is None:
-            raise ValueError("pass target=... or output_profile=...")
+    def explain(self, target: str | None = None, *, view: str | None = None) -> str:
+        if target is None and view is None:
+            raise ValueError("pass target=... or view=...")
         if target is not None:
             targets = [target]
         else:
-            if output_profile is None:
-                raise ValueError("pass target=... or output_profile=...")
-            targets = list(self._output_profiles[output_profile].values())
+            if view is None:
+                raise ValueError("pass target=... or view=...")
+            targets = list(self._views[view].values())
         needed = set(targets)
         for item in targets:
             needed |= self.dependencies_of(item)
@@ -456,7 +513,7 @@ class ExprGraph:
             for name in self.topological_order()
             if name in needed and self._graph[self._indices[name]].kind is NodeKind.FORMULA
         ]
-        info = self.info(output_profile=output_profile)
+        info = self.info(view=view)
         lines = [f"Graph: {self.name}"]
         lines.append("Required inputs: " + (", ".join(info.required_inputs) or "-"))
         lines.append("Market outputs: " + (", ".join(info.market_outputs) or "-"))
@@ -467,15 +524,15 @@ class ExprGraph:
             lines.append(f"  - {self.formula_of(name)}{suffix}")
         return "\n".join(lines)
 
-    def validate_outputs(self, profile: str, schema: object) -> None:
-        mapping = self._resolve_outputs(None, profile)
+    def validate_view(self, view: str, schema: object) -> None:
+        mapping = self._resolve_view(None, view)
         fields = set(cast(Any, schema).to_schema().columns.keys())
         missing = sorted(fields - set(mapping))
         if missing:
-            raise ValueError(f"output profile {profile!r} is missing schema fields: {missing}")
+            raise ValueError(f"view {view!r} is missing schema fields: {missing}")
         unknown = sorted(node for node in mapping.values() if node not in self._indices)
         if unknown:
-            raise ValueError(f"output profile {profile!r} maps to unknown nodes: {unknown}")
+            raise ValueError(f"view {view!r} maps to unknown nodes: {unknown}")
 
     def required_inputs(self) -> set[str]:
         """The columns a caller must supply: leaf INPUT nodes, minus what market
@@ -486,12 +543,11 @@ class ExprGraph:
         market_keys = {k for req in self._market for k in req.left_keys}
         return (graph_inputs - market_provided - set(self._input_aliases)) | market_keys
 
-    def output_dtypes(self, profile: str) -> dict[str, Any | None]:
-        """{output_column: declared node dtype} for a profile — a cheap contract
+    def view_dtypes(self, view: str) -> dict[str, Any | None]:
+        """{output_column: declared node dtype} for a view — a cheap contract
         derived from the stored node dtypes."""
         return {
-            col: self._graph[self._indices[node]].dtype
-            for col, node in self._output_profiles[profile].items()
+            col: self._graph[self._indices[node]].dtype for col, node in self._views[view].items()
         }
 
 

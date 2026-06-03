@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 import polars as pl
 
@@ -30,6 +31,23 @@ class MarketDependency(Protocol):
     def right_keys(self) -> tuple[str, ...]: ...
 
     def attach(self, lf: pl.LazyFrame, snapshot: MarketSnapshot) -> pl.LazyFrame: ...
+
+
+@dataclass(frozen=True, slots=True)
+class MarketRead:
+    """A market read whose output column is not yet decided.
+
+    Market specs return a ``MarketRead`` when no ``output`` is passed: the read
+    knows its source and join keys but waits for ``FormulaGraph.for_market`` to
+    name the output column from the keyword it is bound to::
+
+        graph.for_market(rate=CURVES.value("zero_rate", ...))  # -> output "rate"
+    """
+
+    build: Callable[[str], Any]
+
+    def as_output(self, output: str) -> MarketDependency:
+        return self.build(output)
 
 
 @dataclass(frozen=True, slots=True)

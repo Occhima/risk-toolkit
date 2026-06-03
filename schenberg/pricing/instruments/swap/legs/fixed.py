@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import polars as pl
 
-from schenberg.core.graph import ExprGraph
+from schenberg.core.graph import FormulaGraph
 from schenberg.domain.enums import SwapLegKind
 from schenberg.pricing.instruments.swap.legs.registry import register_leg
 
-fixed_leg_cashflow_graph = ExprGraph("fixed_swap_leg_cashflow")
+fixed_leg_cashflow_graph = FormulaGraph("fixed_swap_leg_cashflow")
 
 
-@fixed_leg_cashflow_graph.node(dtype=pl.Float64, tags=("fixed", "cashflow"))
+@fixed_leg_cashflow_graph.formula(dtype=pl.Float64, tags=("fixed", "cashflow"))
 def cashflow_amount(
     notional: pl.Expr,
     fixed_rate: pl.Expr,

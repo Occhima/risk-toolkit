@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from schenberg.pricing.instruments.option.models import (
-    option_greeks_router,
     option_price_router,
+    option_risk_router,
     option_router,
 )
 from schenberg.pricing.instruments.option.prices import (
@@ -13,8 +13,8 @@ from schenberg.pricing.instruments.option.prices import (
 )
 
 __all__ = [
-    "option_greeks_router",
     "option_price_router",
+    "option_risk_router",
     "option_router",
     "price_options",
     "price_options_with_greeks",
