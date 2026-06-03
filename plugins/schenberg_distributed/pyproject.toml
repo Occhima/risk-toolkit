@@ -1,0 +1,30 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "schenberg-distributed"
+version = "0.1.0"
+description = "Distributed pricing execution contexts for Schenberg Polars graph computations."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [{ name = "Schenberg contributors" }]
+dependencies = [
+  "polars>=1.30",
+  "ray[data]>=2.40",
+  "schenberg",
+]
+
+[tool.uv.sources]
+schenberg = { workspace = true }
+
+[dependency-groups]
+dev = [
+  "pytest>=8.4",
+  "ruff>=0.12",
+  "ty>=0.0.1a16",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["schenberg_distributed"]

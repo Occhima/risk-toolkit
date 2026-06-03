@@ -18,6 +18,9 @@ formulae.
 ## Project layout
 
 ```text
+.devcontainer/                  # containerized VS Code/Codespaces development environment
+plugins/                        # uv workspace project extensions
+  schenberg_distributed/        # pricing execution contexts for Polars/Ray/custom backends
 schenberg/
   core/                         # graph engine, market joins, pipeline object
   domain/                       # Pandera public schemas
@@ -61,6 +64,28 @@ from schenberg.pricing.api import price_swap
 swaps = pl.DataFrame(...).lazy()
 market = MarketSnapshot(as_of=date(2026, 6, 3), curves=pl.DataFrame(...).lazy())
 result = price_swap(swaps, market).collect()
+```
+
+## Workspace plugins
+
+This repository is a `uv` workspace. Project extensions live under `plugins/`
+and can depend on the root `schenberg` package as a workspace dependency. The
+first extension is `schenberg-distributed`, which centralizes pricing
+materialization in execution contexts:
+
+- `PricingExecutionContext.local(...)` forwards keyword arguments to
+  `polars.LazyFrame.collect`.
+- `PricingExecutionContext.ray(...)` initializes Ray and then collects the lazy
+  pricing graph, providing the integration point for distributed Polars
+  execution.
+- `PricingExecutionContext.custom(...)` dispatches to registered backend hooks
+  for future execution engines.
+
+```python
+from schenberg_distributed import PricingExecutionContext, collect_pricing
+
+context = PricingExecutionContext.ray(engine="streaming")
+result = collect_pricing(lazy_pricing_frame, context=context)
 ```
 
 ## Development commands

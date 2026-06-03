@@ -17,12 +17,19 @@ dependencies = [
   "rustworkx>=0.16",
 ]
 
+[tool.uv.workspace]
+members = ["plugins/*"]
+
+[tool.uv.sources]
+schenberg-distributed = { workspace = true }
+
 [dependency-groups]
 dev = [
   "pytest>=8.4",
   "ruff>=0.12",
   "ty>=0.0.1a16",
   "poethepoet>=0.36",
+  "schenberg-distributed",
 ]
 
 [project.optional-dependencies]
@@ -43,7 +50,7 @@ testpaths = ["tests"]
 [tool.ruff]
 line-length = 100
 target-version = "py312"
-src = ["schenberg", "tests"]
+src = ["schenberg", "plugins", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "PL"]
