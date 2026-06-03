@@ -11,17 +11,12 @@ class Position(DataFrameModel):
     quantity: float
 
 
-class InstrumentValue(DataFrameModel):
+class InstrumentPrice(DataFrameModel):
     instrument_type: str
     instrument_id: str
-    value: float
+    price: float
 
 
-class PositionValue(DataFrameModel):
-    position_id: str
-    book: str
-    instrument_type: str
-    instrument_id: str
-    quantity: float
-    unit_value: float
-    market_value: float
+class PricedPosition(Position):
+    price: float
+    mtm: float

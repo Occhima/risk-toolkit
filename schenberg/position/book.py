@@ -4,16 +4,16 @@ from dataclasses import dataclass
 
 from pandera.typing.polars import LazyFrame
 
-from schenberg.domain.schemas.position import InstrumentValue, Position, PositionValue
-from schenberg.position.functions import value_positions
+from schenberg.domain.schemas.position import InstrumentPrice, Position, PricedPosition
+from schenberg.position.functions import with_prices
 
 
 @dataclass(frozen=True, slots=True)
 class Book:
     positions: LazyFrame[Position]
 
-    def value(
+    def with_prices(
         self,
-        instrument_values: LazyFrame[InstrumentValue],
-    ) -> LazyFrame[PositionValue]:
-        return value_positions(self.positions, instrument_values)
+        prices: LazyFrame[InstrumentPrice],
+    ) -> LazyFrame[PricedPosition]:
+        return with_prices(self.positions, prices)

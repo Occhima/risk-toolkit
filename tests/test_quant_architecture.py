@@ -17,7 +17,7 @@ from schenberg.domain.schemas.market_data import (
     EnergyForwardCurveContract,
     FxRatesContract,
 )
-from schenberg.domain.schemas.position import Position, PositionValue
+from schenberg.domain.schemas.position import Position, PricedPosition
 from schenberg.market_data.calendar.conventions import Calendar
 from schenberg.market_data.curves.di import DiCurve, DiCurveSpec
 from schenberg.market_data.forwards import EnergyForwardCurveSpec
@@ -25,7 +25,11 @@ from schenberg.market_data.fx import FxRates
 from schenberg.market_data.shocks import ParallelZeroRateShock
 from schenberg.market_data.snapshot import MarketSnapshot
 from schenberg.market_data.sources import MarketSource
-from schenberg.position.functions import mtm_forward, pnl_from_position_values, value_positions
+from schenberg.position.functions import (
+    pnl_from_priced_positions,
+    price_forward_instruments,
+    with_prices,
+)
 from schenberg.position.pipelines import valuation_pipe
 
 
@@ -124,7 +128,7 @@ def test_router_fallback_receives_all_rows_with_no_cases() -> None:
 
 
 def test_energy_forward_graph_and_position_layer(energy_inputs, energy_market) -> None:
-    priced = mtm_forward(energy_inputs, energy_market)
+    priced = price_forward_instruments(energy_inputs, energy_market)
     positions = Position.from_records(
         [
             {
@@ -136,19 +140,19 @@ def test_energy_forward_graph_and_position_layer(energy_inputs, energy_market) -
             }
         ]
     )
-    valued = value_positions(positions, priced)
+    valued = positions.pipe(with_prices, priced)
 
     priced_df = cast(pl.DataFrame, priced.collect())
     valued_df = cast(pl.DataFrame, valued.collect())
 
     assert priced_df.height == 1
     assert priced_df.select("instrument_id").item() == "ENG-1"
-    assert priced_df.select("value").item() == pytest.approx(49.057467, rel=1e-6)
-    assert valued_df.select("market_value").item() == pytest.approx(4905.7467, rel=1e-6)
+    assert priced_df.select("price").item() == pytest.approx(49.057467, rel=1e-6)
+    assert valued_df.select("mtm").item() == pytest.approx(4905.7467, rel=1e-6)
 
 
-def test_pnl_from_position_values_can_be_called_independently() -> None:
-    today = PositionValue.from_records(
+def test_pnl_from_priced_positions_can_be_called_independently() -> None:
+    today = PricedPosition.from_records(
         [
             {
                 "position_id": "P",
@@ -156,12 +160,12 @@ def test_pnl_from_position_values_can_be_called_independently() -> None:
                 "instrument_type": "FORWARD",
                 "instrument_id": "I",
                 "quantity": 2.0,
-                "unit_value": 6.0,
-                "market_value": 12.0,
+                "price": 6.0,
+                "mtm": 12.0,
             }
         ]
     )
-    previous = PositionValue.from_records(
+    previous = PricedPosition.from_records(
         [
             {
                 "position_id": "P",
@@ -169,16 +173,16 @@ def test_pnl_from_position_values_can_be_called_independently() -> None:
                 "instrument_type": "FORWARD",
                 "instrument_id": "I",
                 "quantity": 2.0,
-                "unit_value": 5.0,
-                "market_value": 10.0,
+                "price": 5.0,
+                "mtm": 10.0,
             }
         ]
     )
 
-    out = pnl_from_position_values(today, previous).collect()
+    out = pnl_from_priced_positions(today, previous).collect()
 
     expected_pnl = 2.0
-    assert cast(pl.DataFrame, out).select("pnl").item() == expected_pnl
+    assert cast(pl.DataFrame, out).select("mtm_pnl").item() == expected_pnl
 
 
 def test_valuation_pipe_exposes_intermediate_outputs(energy_inputs, energy_market) -> None:
@@ -196,10 +200,8 @@ def test_valuation_pipe_exposes_intermediate_outputs(energy_inputs, energy_marke
 
     env = valuation_pipe.run(forwards=energy_inputs, positions=positions, market=energy_market)
 
-    assert {"forward_values", "instrument_values", "position_values", "book_values"}.issubset(env)
-    assert env["book_values"].collect().select("market_value").item() == pytest.approx(
-        4905.7467, rel=1e-6
-    )
+    assert {"forward_prices", "prices", "priced_positions", "book_mtm"}.issubset(env)
+    assert env["book_mtm"].collect().select("mtm").item() == pytest.approx(4905.7467, rel=1e-6)
 
 
 def test_expected_user_workflow() -> None:
@@ -257,11 +259,9 @@ def test_expected_user_workflow() -> None:
         ]
     )
 
-    instrument_values = mtm_forward(cast(LazyFrame[ForwardTrade], forwards), market)
-    position_values = value_positions(positions, instrument_values)
+    prices = price_forward_instruments(cast(LazyFrame[ForwardTrade], forwards), market)
+    priced_positions = positions.pipe(with_prices, prices)
 
-    assert cast(pl.DataFrame, position_values.collect()).select(
-        "market_value"
-    ).item() == pytest.approx(
-        cast(pl.DataFrame, instrument_values.collect()).select("value").item() * 100.0
+    assert cast(pl.DataFrame, priced_positions.collect()).select("mtm").item() == pytest.approx(
+        cast(pl.DataFrame, prices.collect()).select("price").item() * 100.0
     )
