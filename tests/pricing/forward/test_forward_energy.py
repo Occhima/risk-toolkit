@@ -18,8 +18,11 @@ def test_price_energy_forward_prices_normalized_rows_without_quantity(
     expected += (130.0 - 100.0) * math.exp(-0.10 * 60.0 / 252.0)
 
     assert result.select("instrument_id").item() == "ENG-1"
-    assert result.select("mtm_local").item() == pytest.approx(expected)
-    assert result.select("mtm").item() == pytest.approx(expected)
+    assert result.select("instrument_type").item() == "FORWARD"
+    assert result.select("price").item() == pytest.approx(expected)
+    assert "mtm_local" not in result.columns
+    assert "mtm" not in result.columns
+    assert "quantity" not in result.columns
 
 
 def test_energy_core_pricer_has_no_explode_delivery_helper_or_quantity_dependency() -> None:

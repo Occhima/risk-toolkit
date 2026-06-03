@@ -11,8 +11,8 @@ from pandera.typing.polars import LazyFrame
 from schenberg.core.columns import cols
 from schenberg.core.graph import ExprGraph
 from schenberg.domain.enums import BuySell, ForwardFamily, InstrumentType, SettlementType
-from schenberg.domain.schemas import EnergyForwardOutput
 from schenberg.domain.schemas.forward import EnergyForwardLeg, ForwardPricing, ForwardTrade
+from schenberg.domain.schemas.position import InstrumentPrice
 from schenberg.market_data.curves.di import DiCurveSpec
 from schenberg.market_data.forwards import EnergyForwardCurveSpec
 from schenberg.market_data.fx import FxRatesSpec
@@ -23,6 +23,7 @@ from schenberg.pricing.instruments.forward.router import forward_router
 F = cols(ForwardTrade)
 E = cols(EnergyForwardLeg)
 P = cols(ForwardPricing)
+PX = cols(InstrumentPrice)
 
 DI = DiCurveSpec("di_curve")
 ENERGY = EnergyForwardCurveSpec("energy_forward_curve")
@@ -70,16 +71,22 @@ def energy_forward_graph() -> ExprGraph:
 def price_energy_forward(
     legs: LazyFrame[EnergyForwardLeg],
     market: MarketSnapshot,
-) -> LazyFrame[EnergyForwardOutput]:
+) -> LazyFrame[InstrumentPrice]:
     priced = energy_forward_graph.compute_for(
         legs,
         market=market,
         output_profile="pricing",
     )
 
-    result = priced.group_by(E.instrument_id.name).agg(
-        mtm_local=P.present_value.expr().sum(),
-        mtm=P.value.expr().sum(),
+    result = (
+        priced.group_by(E.instrument_id.name)
+        .agg(price=P.value.expr().sum())
+        .with_columns(instrument_type=pl.lit(InstrumentType.FORWARD.value))
+        .select(
+            PX.instrument_type.name,
+            PX.instrument_id.name,
+            PX.price.name,
+        )
     )
 
-    return cast(LazyFrame[EnergyForwardOutput], result)
+    return cast(LazyFrame[InstrumentPrice], result)
