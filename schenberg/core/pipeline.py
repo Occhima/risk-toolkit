@@ -8,11 +8,12 @@ under a bumped market — i.e. things that can never be a single column expressi
 A stage's parameter names are its dependencies: either other stages or external
 inputs passed to .run(). Nothing collects.
 """
+
 from __future__ import annotations
 
 from collections.abc import Callable
 from inspect import signature
-from typing import Any
+from typing import Any, cast
 
 import rustworkx as rx
 
@@ -25,7 +26,7 @@ class Pipe:
 
     def stage(self, fn: Callable[..., Any]) -> Callable[..., Any]:
         """Decorator. Register a stage; its parameter names are its deps."""
-        self._fns[fn.__name__] = (fn, tuple(signature(fn).parameters))
+        self._fns[cast(str, getattr(fn, "__name__", None))] = (fn, tuple(signature(fn).parameters))
         self._order = None
         return fn
 
@@ -37,7 +38,7 @@ class Pipe:
             idx[nm] = g.add_node(nm)
         for nm, (_, deps) in self._fns.items():
             for dep in deps:
-                if dep in idx:                      # dep is another stage -> edge
+                if dep in idx:  # dep is another stage -> edge
                     g.add_edge(idx[dep], idx[nm], None)
         if not rx.is_directed_acyclic_graph(g):
             raise ValueError(f"pipeline {self.name!r} has a cycle")

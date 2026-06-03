@@ -1,4 +1,5 @@
 """Swap-level <-> leg-level transforms. Pure, lazy, no collect."""
+
 from __future__ import annotations
 
 import polars as pl
@@ -8,6 +9,7 @@ _COMMON = ["swap_id", "notional", "payment_days", "accrual", "base_date"]
 
 def swap_to_legs(swaps: pl.LazyFrame) -> pl.LazyFrame:
     """Wide swap rows -> long leg rows. ativo: pay_receive=+1, passivo: -1."""
+
     def leg(side: str, sign: float) -> pl.LazyFrame:
         return swaps.select(
             *_COMMON,
@@ -18,6 +20,7 @@ def swap_to_legs(swaps: pl.LazyFrame) -> pl.LazyFrame:
             pl.col(f"fixed_rate_{side}").alias("fixed_rate"),
             pl.col(f"real_coupon_{side}").alias("real_coupon"),
         )
+
     return pl.concat([leg("ativo", 1.0), leg("passivo", -1.0)], how="vertical")
 
 
