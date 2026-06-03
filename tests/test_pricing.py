@@ -8,8 +8,8 @@ from schenberg.pricing.api import price_energy_forward, price_swap
 from schenberg.pricing.instruments.forward.energy import energy_forward_graph
 
 
-def test_price_swap_returns_aggregated_npv(swap_inputs, swap_market) -> None:
-    result = cast(pl.DataFrame, price_swap(swap_inputs, swap_market).collect())
+def test_price_swap_returns_aggregated_npv(swap_legs, swap_market) -> None:
+    result = cast(pl.DataFrame, price_swap(swap_legs, swap_market).collect())
 
     assert result.select("swap_id").item() == "SWP-1"
     assert result.select("ativo_pv").item() == pytest.approx(108_580.490164, rel=1e-6)

@@ -18,16 +18,16 @@ import polars as pl
 import pytest
 from schenberg.pricing.api import price_swaps
 
-from .realistic_data import make_market, make_swaps
+from .realistic_data import make_market, make_swap_legs
 
 # (n_swaps, wall-clock budget in seconds) — budgets are deliberately loose.
 SIZES = [(1_000, 3.0), (10_000, 6.0), (50_000, 20.0)]
 
 
 def _price_and_time(n: int, market) -> tuple[int, float]:
-    swaps = make_swaps(n)
+    legs = make_swap_legs(n)
     start = time.perf_counter()
-    result = cast(pl.DataFrame, price_swaps(swaps, market).collect())
+    result = cast(pl.DataFrame, price_swaps(legs, market).collect())
     elapsed = time.perf_counter() - start
     assert result.height == n  # one NPV row per swap
     assert result["npv"].is_finite().all()

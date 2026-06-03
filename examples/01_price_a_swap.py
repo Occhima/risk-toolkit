@@ -2,10 +2,11 @@
 
 Run with:  uv run python examples/01_price_a_swap.py
 
-A swap is one wide row. ``price_swap`` normalizes it into long leg rows, routes
-each leg to the right pricer (CDI / IPCA / fixed) by ``indexador_kind``, attaches
-the market curves it declares, and aggregates the leg PVs back to a swap NPV.
-Everything stays lazy until ``.collect()``.
+A swap *is* its legs. You book the legs directly (the contract is ``SwapLegInput``,
+not a wide row that needs reshaping); ``price_swap`` routes each leg to the right
+pricer (CDI / IPCA / fixed) by ``leg_kind``, attaches the market curves the leg
+declares, and aggregates the signed leg PVs back to a swap NPV. Everything stays
+lazy until ``.collect()``.
 """
 
 from __future__ import annotations
@@ -15,7 +16,7 @@ from typing import cast
 
 import polars as pl
 from pandera.typing.polars import LazyFrame
-from schenberg.domain.schemas import SwapInput
+from schenberg.domain.schemas import SwapLegInput
 from schenberg.market_data.snapshot import MarketSnapshot
 from schenberg.market_data.sources import MarketSource
 from schenberg.pricing.api import price_swap
@@ -50,28 +51,41 @@ market = MarketSnapshot.from_sources(
     ],
 )
 
-# --- One swap: receive CDI (ativo), pay IPCA+coupon (passivo) --------------------
-swaps = cast(
-    LazyFrame[SwapInput],
+# --- One swap, booked as two legs: receive CDI (ativo), pay IPCA+coupon (passivo) -
+_common = {
+    "notional": 1_000_000.0,
+    "payment_days": 252,
+    "accrual": 1.0,
+    "base_date": date(2026, 6, 3),
+    "fixed_rate": None,
+    "cashflow_amount": None,
+}
+legs = cast(
+    LazyFrame[SwapLegInput],
     pl.DataFrame(
-        {
-            "swap_id": ["SWP-1"],
-            "notional": [1_000_000.0],
-            "id_indexador_ativo": [1],
-            "id_indexador_passivo": [2],
-            "indexador_kind_ativo": ["CDI"],
-            "indexador_kind_passivo": ["IPCA"],
-            "payment_days": [252],
-            "accrual": [1.0],
-            "base_date": [date(2026, 6, 3)],
-            "fixed_rate_ativo": [None],
-            "fixed_rate_passivo": [None],
-            "real_coupon_ativo": [None],
-            "real_coupon_passivo": [0.02],
-        }
+        [
+            {
+                "swap_id": "SWP-1",
+                "leg_id": "ativo",
+                "leg_kind": "CDI",
+                "pay_receive": "RECEIVE",
+                "id_indexador": 1,
+                "real_coupon": None,
+                **_common,
+            },
+            {
+                "swap_id": "SWP-1",
+                "leg_id": "passivo",
+                "leg_kind": "IPCA",
+                "pay_receive": "PAY",
+                "id_indexador": 2,
+                "real_coupon": 0.02,
+                **_common,
+            },
+        ]
     ).lazy(),
 )
 
-result = price_swap(swaps, market).collect()
+result = price_swap(legs, market).collect()
 print(result)
 # npv = ativo_pv (receive CDI) + passivo_pv (pay IPCA) — both already signed.

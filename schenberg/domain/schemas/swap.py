@@ -7,22 +7,6 @@ import pandera.polars as pa
 from schenberg.domain.base import DataFrameModel
 
 
-class SwapInput(DataFrameModel):
-    swap_id: str
-    notional: float
-    id_indexador_ativo: int
-    id_indexador_passivo: int
-    indexador_kind_ativo: str
-    indexador_kind_passivo: str
-    payment_days: int
-    accrual: float
-    base_date: date
-    fixed_rate_ativo: float = pa.Field(nullable=True)
-    fixed_rate_passivo: float = pa.Field(nullable=True)
-    real_coupon_ativo: float = pa.Field(nullable=True)
-    real_coupon_passivo: float = pa.Field(nullable=True)
-
-
 class SwapLegInput(DataFrameModel):
     swap_id: str
     leg_id: str
