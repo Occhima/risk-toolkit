@@ -69,7 +69,7 @@ class ExprGraph:
         def register(fn: ExprFn) -> ExprFn:
             self._register(
                 ExprNode(
-                    name=name or cast(str, getattr(fn, "__name__", None)),
+                    name=name or fn.__name__,
                     kind=NodeKind.FORMULA,
                     deps=tuple(signature(fn).parameters),
                     fn=fn,

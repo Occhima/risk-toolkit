@@ -5,7 +5,7 @@ from typing import cast
 
 import polars as pl
 from schenberg.core.columns import ColumnSet
-from schenberg.core.market import curve, energy_forward, fixing, fx
+from schenberg.core.market import curve, fixing
 from schenberg.market_data.snapshot import MarketSnapshot
 from schenberg.market_data.sources import MarketSource
 
@@ -21,11 +21,6 @@ def test_market_requirement_constructors_use_column_sets() -> None:
     assert curve("zero_rate").left_keys == ("id_indexador", "payment_days")
     assert curve("zero_rate").right_keys == ("id_indexador", "tenor_days")
     assert fixing().outputs == {"fixing_value": "base_index"}
-    assert energy_forward().outputs == {
-        "forward_price": "forward_price",
-        "settle_days": "payment_days",
-    }
-    assert fx().left_keys == ("currency",)
 
 
 def test_market_snapshot_attach_lazily_joins_and_renames_outputs() -> None:

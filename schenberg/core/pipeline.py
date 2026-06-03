@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from inspect import signature
-from typing import Any, cast
+from typing import Any
 
 import rustworkx as rx
 
@@ -26,7 +26,7 @@ class Pipe:
 
     def stage(self, fn: Callable[..., Any]) -> Callable[..., Any]:
         """Decorator. Register a stage; its parameter names are its deps."""
-        self._fns[cast(str, getattr(fn, "__name__", None))] = (fn, tuple(signature(fn).parameters))
+        self._fns[fn.__name__] = (fn, tuple(signature(fn).parameters))
         self._order = None
         return fn
 

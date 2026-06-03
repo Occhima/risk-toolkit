@@ -2,13 +2,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
-from enum import StrEnum
 
+from schenberg.domain.enums import AccrualConvention
 
-class AccrualConvention(StrEnum):
-    COMPOUND = "COMPOUND"
-    CONTINUOUS = "CONTINUOUS"
-    LINEAR = "LINEAR"
+__all__ = ["AccrualConvention", "Calendar"]
 
 
 @dataclass(frozen=True, slots=True)
