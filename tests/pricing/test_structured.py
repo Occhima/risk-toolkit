@@ -5,41 +5,48 @@ from typing import cast
 
 import polars as pl
 import pytest
+from pandera.typing.polars import LazyFrame
 from schenberg.domain.schemas.position import InstrumentPrice, Position
 from schenberg.domain.schemas.structure import StructureLeg
 from schenberg.position.functions import with_prices
 from schenberg.pricing.structured import price_structures
 
 
-def _component_prices() -> pl.LazyFrame:
-    return InstrumentPrice.from_records(
-        [
-            {"instrument_type": "FORWARD", "instrument_id": "ENG-1", "price": 10.0},
-            {"instrument_type": "SWAP", "instrument_id": "SWP-1", "price": 5.0},
-        ]
+def _component_prices() -> LazyFrame[InstrumentPrice]:
+    return cast(
+        LazyFrame[InstrumentPrice],
+        InstrumentPrice.from_records(
+            [
+                {"instrument_type": "FORWARD", "instrument_id": "ENG-1", "price": 10.0},
+                {"instrument_type": "SWAP", "instrument_id": "SWP-1", "price": 5.0},
+            ]
+        ),
     )
 
 
-def _structure_legs() -> pl.LazyFrame:
-    return StructureLeg.from_records(
-        [
-            {
-                "structure_id": "PREPAY-001",
-                "leg_id": "L1",
-                "component_instrument_type": "FORWARD",
-                "component_instrument_id": "ENG-1",
-                "quantity": 2.0,
-                "side": 1.0,
-            },
-            {
-                "structure_id": "PREPAY-001",
-                "leg_id": "L2",
-                "component_instrument_type": "SWAP",
-                "component_instrument_id": "SWP-1",
-                "quantity": 3.0,
-                "side": -1.0,
-            },
-        ]
+def _structure_legs() -> LazyFrame[StructureLeg]:
+    return cast(
+        LazyFrame[StructureLeg],
+        StructureLeg.from_records(
+            [
+                {
+                    "structure_id": "PREPAY-001",
+                    "leg_id": "L1",
+                    "component_instrument_type": "FORWARD",
+                    "component_instrument_id": "ENG-1",
+                    "quantity": 2.0,
+                    "side": 1.0,
+                },
+                {
+                    "structure_id": "PREPAY-001",
+                    "leg_id": "L2",
+                    "component_instrument_type": "SWAP",
+                    "component_instrument_id": "SWP-1",
+                    "quantity": 3.0,
+                    "side": -1.0,
+                },
+            ]
+        ),
     )
 
 
@@ -103,25 +110,28 @@ def test_structure_price_passes_through_with_prices() -> None:
 
 
 def test_multi_structure_pricing() -> None:
-    legs = StructureLeg.from_records(
-        [
-            {
-                "structure_id": "S1",
-                "leg_id": "L1",
-                "component_instrument_type": "FORWARD",
-                "component_instrument_id": "ENG-1",
-                "quantity": 1.0,
-                "side": 1.0,
-            },
-            {
-                "structure_id": "S2",
-                "leg_id": "L2",
-                "component_instrument_type": "SWAP",
-                "component_instrument_id": "SWP-1",
-                "quantity": 2.0,
-                "side": 1.0,
-            },
-        ]
+    legs = cast(
+        LazyFrame[StructureLeg],
+        StructureLeg.from_records(
+            [
+                {
+                    "structure_id": "S1",
+                    "leg_id": "L1",
+                    "component_instrument_type": "FORWARD",
+                    "component_instrument_id": "ENG-1",
+                    "quantity": 1.0,
+                    "side": 1.0,
+                },
+                {
+                    "structure_id": "S2",
+                    "leg_id": "L2",
+                    "component_instrument_type": "SWAP",
+                    "component_instrument_id": "SWP-1",
+                    "quantity": 2.0,
+                    "side": 1.0,
+                },
+            ]
+        ),
     )
 
     result = cast(pl.DataFrame, price_structures(legs, _component_prices()).collect())
@@ -134,7 +144,7 @@ def test_multi_structure_pricing() -> None:
 
 def test_concat_atomic_and_structure_prices_for_with_prices() -> None:
     """Demonstrate the full composition pattern: atomic + structure → with_prices."""
-    atomic_prices = _component_prices()
+    atomic_prices: LazyFrame[InstrumentPrice] = _component_prices()
     structure_prices = price_structures(_structure_legs(), atomic_prices)
     all_prices = pl.concat([atomic_prices, structure_prices], how="diagonal_relaxed")
 
