@@ -55,13 +55,6 @@ def _price_leaf(name: str, *graphs: ExprGraph, price_node: str) -> ExprGraph:
     leaf = ExprGraph.compose(name, generalized_bsm_core, *graphs)
     leaf.with_outputs("price", price=price_node)
     leaf.with_outputs(
-        "pricing",  # backward-compatible profile name
-        d1="d1",
-        d2="d2",
-        price=price_node,
-        cost_of_carry=STATE.cost_of_carry.name,
-    )
-    leaf.with_outputs(
         "priced_state",
         year_fraction=STATE.year_fraction.name,
         d1=STATE.d1.name,
@@ -86,7 +79,6 @@ def _greeks_leaf(name: str, price_graph: ExprGraph, *, price_node: str) -> ExprG
         "vol": STATE.vol.name,
     }
     leaf.with_outputs("price_with_greeks", **pricing, **_GREEK_OUTPUTS)
-    leaf.with_outputs("greeks", **pricing, **_GREEK_OUTPUTS)  # compatibility
     return leaf
 
 
@@ -133,32 +125,20 @@ merton_put_with_greeks = _greeks_leaf(
     "merton_put_with_greeks", merton_put, price_node="put_price"
 )
 
-option_price_router = Router.by(OPT.option_model, OPT.option_kind)
-option_price_router.register(
-    OPT.option_model == OptionModel.GENERALIZED, OPT.option_kind == OptionKind.CALL
-)(lambda: generalized_call)
-option_price_router.register(
-    OPT.option_model == OptionModel.GENERALIZED, OPT.option_kind == OptionKind.PUT
-)(lambda: generalized_put)
-option_price_router.register(
-    OPT.option_model == OptionModel.MERTON, OPT.option_kind == OptionKind.CALL
-)(lambda: merton_call)
-option_price_router.register(
-    OPT.option_model == OptionModel.MERTON, OPT.option_kind == OptionKind.PUT
-)(lambda: merton_put)
+# Every (model, kind) routes to a price-only leaf and a price+Greeks leaf. The
+# table is the single source of truth; both routers are built from it.
+_LEAVES = {
+    (OptionModel.GENERALIZED, OptionKind.CALL): (generalized_call, generalized_call_with_greeks),
+    (OptionModel.GENERALIZED, OptionKind.PUT): (generalized_put, generalized_put_with_greeks),
+    (OptionModel.MERTON, OptionKind.CALL): (merton_call, merton_call_with_greeks),
+    (OptionModel.MERTON, OptionKind.PUT): (merton_put, merton_put_with_greeks),
+}
 
+option_price_router = Router.by(OPT.option_model, OPT.option_kind)
 option_greeks_router = Router.by(OPT.option_model, OPT.option_kind)
-option_greeks_router.register(
-    OPT.option_model == OptionModel.GENERALIZED, OPT.option_kind == OptionKind.CALL
-)(lambda: generalized_call_with_greeks)
-option_greeks_router.register(
-    OPT.option_model == OptionModel.GENERALIZED, OPT.option_kind == OptionKind.PUT
-)(lambda: generalized_put_with_greeks)
-option_greeks_router.register(
-    OPT.option_model == OptionModel.MERTON, OPT.option_kind == OptionKind.CALL
-)(lambda: merton_call_with_greeks)
-option_greeks_router.register(
-    OPT.option_model == OptionModel.MERTON, OPT.option_kind == OptionKind.PUT
-)(lambda: merton_put_with_greeks)
+for (model, kind), (price_leaf, greeks_leaf) in _LEAVES.items():
+    predicates = (OPT.option_model == model, OPT.option_kind == kind)
+    option_price_router.register(*predicates)(lambda leaf=price_leaf: leaf)
+    option_greeks_router.register(*predicates)(lambda leaf=greeks_leaf: leaf)
 
 option_router = option_price_router

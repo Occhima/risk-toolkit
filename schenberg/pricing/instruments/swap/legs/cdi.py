@@ -12,14 +12,12 @@ from schenberg.pricing.instruments.swap.legs.registry import register_leg
 cdi_cashflow_graph = ExprGraph("cdi_cashflow")
 
 
-@cdi_cashflow_graph.node(tags=("projection", "cdi"))
-def projected_rate(forward_rate: pl.Expr) -> pl.Expr:
-    return forward_rate
-
-
+# CDI projects off ``forward_rate`` directly; the coupon is then the same
+# notional * rate * accrual shape as a fixed leg, with the rate sourced from the
+# curve instead of the trade.
 @cdi_cashflow_graph.node(tags=("cashflow", "cdi"))
-def cashflow_amount(notional: pl.Expr, projected_rate: pl.Expr, accrual: pl.Expr) -> pl.Expr:
-    return notional * projected_rate * accrual
+def cashflow_amount(notional: pl.Expr, forward_rate: pl.Expr, accrual: pl.Expr) -> pl.Expr:
+    return notional * forward_rate * accrual
 
 
 # CDI projects off the forward_rate column carried on the discount curve.

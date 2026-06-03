@@ -84,27 +84,6 @@ class VolSurface:
         """Interpolated implied vol at time-to-maturity in years and strike."""
         return bilinear(strike, ttm, self.strikes, self.tenors, self.vols)
 
-    def attach(
-        self,
-        lf: pl.LazyFrame,
-        *,
-        ttm_col: str = "ttm",
-        strike_col: str = "strike",
-        output: str = "vol",
-    ) -> pl.LazyFrame:
-        """Legacy helper for a single already-built surface; graph specs are preferred."""
-
-        def interpolate(s: pl.Series) -> pl.Series:
-            ttm = s.struct.field(ttm_col).to_numpy()
-            strike = s.struct.field(strike_col).to_numpy()
-            return pl.Series(output, self.implied_vol(ttm, strike))
-
-        return lf.with_columns(
-            pl.struct([ttm_col, strike_col])
-            .map_batches(interpolate, return_dtype=pl.Float64)
-            .alias(output)
-        )
-
 
 @dataclass(frozen=True, slots=True)
 class VolSurfaceBook:
