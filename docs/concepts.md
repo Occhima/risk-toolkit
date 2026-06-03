@@ -115,3 +115,57 @@ pricing/       instruments (swap, forward, ...) + portfolio
 ```
 
 Dependencies point downward only: `pricing → market_data → core → domain`.
+
+## Option market data and volatility surfaces
+
+Market data belongs in market specs, not in pricing-facade enrichment. Curves,
+fixings, dividends, carry curves and implied-volatility surfaces are all declared
+by the graph through `with_market(...)`; pricing functions orchestrate contracts
+and select public columns.
+
+A volatility surface is a custom attachable market dependency because the lookup
+is interpolation over `(id_indexador, tenor_days, strike)`, not a simple left
+join. The caller supplies the surface as a `MarketSource` through
+`VolSurfaces.source()`, and the option graph declares the implied-vol column:
+
+```python
+from schenberg.core.columns import cols
+from schenberg.domain.schemas.option import OptionTrade
+from schenberg.market_data.volatility import VolSurfaceSpec
+
+OPT = cols(OptionTrade)
+VOL = VolSurfaceSpec("vol_surface")
+
+graph.with_market(
+    VOL.implied_vol(
+        indexer_col=OPT.id_indexador.name,
+        tenor_col=OPT.payment_days.name,
+        strike_col=OPT.strike.name,
+        output="vol",
+    )
+)
+```
+
+`price_options(...)` is price-only and returns the public `OptionPrice` contract.
+`price_options_with_greeks(...)` is the separate public path for sensitivities.
+Closed-form Greeks are a graph composition on top of the option price graph;
+numeric and autodiff Greeks consume an explicit priced-state contract containing
+price inputs and derived BSM terms.
+
+## Graph documentation and debugging
+
+Formula metadata is documentation/introspection only; it does not parse Polars
+expressions and does not change execution. Nodes may carry a `symbol` and
+`formula`, then the graph can explain itself:
+
+- `graph.formula_of("d1")` returns the math label for one node.
+- `graph.formulas()` returns formulas for formula nodes.
+- `graph.info(output_profile="priced_state")` summarizes required inputs,
+  market inputs/outputs, formula nodes and selected outputs.
+- `graph.explain(output_profile="priced_state")` prints the dependency path in
+  topological order.
+- `graph.to_mermaid(math_labels=True, show_kinds=True)` emits a Mermaid diagram
+  with formula labels and simple node classes.
+
+Use `graph.stage(...)` when you need materialized intermediate columns for null
+or data-quality debugging; it remains the low-level LazyFrame inspection tool.

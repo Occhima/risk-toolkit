@@ -40,13 +40,21 @@ def rate_discount(disc_strike: pl.Expr, strike: pl.Expr) -> pl.Expr:
     return disc_strike / strike
 
 
-@bsm_greeks_graph.node(tags=("greeks",), description="dV/dS = eta * e^{(b-r)T} * N(eta*d1).")
+@bsm_greeks_graph.node(
+    tags=("greeks",),
+    symbol=r"\Delta",
+    formula=r"\eta e^{(b-r)T}N(\eta d_1)",
+    description="dV/dS = eta * e^{(b-r)T} * N(eta*d1).",
+)
 def delta(eta: pl.Expr, carry_discount: pl.Expr, d1: pl.Expr) -> pl.Expr:
     return eta * carry_discount * norm_cdf_expr(eta * d1)
 
 
 @bsm_greeks_graph.node(
-    tags=("greeks",), description="d2V/dS2 = e^{(b-r)T} N'(d1) / (S sigma sqrt(T))."
+    tags=("greeks",),
+    symbol=r"\Gamma",
+    formula=r"\frac{e^{(b-r)T}N'(d_1)}{S\sigma\sqrt{T}}",
+    description="d2V/dS2 = e^{(b-r)T} N'(d1) / (S sigma sqrt(T)).",
 )
 def gamma(
     carry_discount: pl.Expr, d1: pl.Expr, spot: pl.Expr, vol: pl.Expr, year_fraction: pl.Expr

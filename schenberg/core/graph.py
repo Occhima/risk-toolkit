@@ -18,7 +18,7 @@ import rustworkx as rx
 
 from schenberg.market_data.snapshot import MarketSnapshot
 
-from .market import MarketRequirement
+from .market import MarketDependency
 
 ExprFn = Callable[..., pl.Expr]
 
@@ -37,6 +37,20 @@ class ExprNode:
     dtype: Any | None = None
     tags: tuple[str, ...] = ()
     description: str | None = None
+    symbol: str | None = None
+    formula: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class GraphInfo:
+    name: str
+    required_inputs: tuple[str, ...]
+    market_inputs: tuple[str, ...]
+    market_outputs: tuple[str, ...]
+    formula_nodes: tuple[str, ...]
+    intermediate_nodes: tuple[str, ...]
+    output_nodes: dict[str, str]
+    output_dtypes: dict[str, Any | None]
 
 
 class ExprGraph:
@@ -52,7 +66,7 @@ class ExprGraph:
         self._indices: dict[str, int] = {}  # node name -> rustworkx index
         self._input_aliases: dict[str, str] = {}  # dep name -> concrete node name
         self._output_profiles: dict[str, dict[str, str]] = {}  # profile -> {out_col: node_name}
-        self._market: list[MarketRequirement] = []
+        self._market: list[MarketDependency] = []
 
     # ---- construction ----------------------------------------------------
 
@@ -63,6 +77,8 @@ class ExprGraph:
         tags: tuple[str, ...] = (),
         description: str | None = None,
         name: str | None = None,
+        symbol: str | None = None,
+        formula: str | None = None,
     ):
         """Decorator. Dependencies are inferred from the parameter names."""
 
@@ -76,6 +92,8 @@ class ExprGraph:
                     dtype=dtype,
                     tags=tuple(tags),
                     description=description,
+                    symbol=symbol,
+                    formula=formula,
                 )
             )
             return fn
@@ -104,7 +122,7 @@ class ExprGraph:
 
     # ---- configuration (chainable) ---------------------------------------
 
-    def with_market(self, *requirements: MarketRequirement) -> ExprGraph:
+    def with_market(self, *requirements: MarketDependency) -> ExprGraph:
         self._market.extend(requirements)
         return self
 
@@ -344,9 +362,122 @@ class ExprGraph:
             f"  {node.description or ''}"
         ).rstrip()
 
-    def to_mermaid(self) -> str:
-        lines = ["flowchart LR", *(f"    {a} --> {b}" for a, b in self.edges())]
+    def formula_of(self, target: str) -> str:
+        node = self._graph[self._indices[target]]
+        if node.kind is NodeKind.INPUT:
+            return node.symbol or node.name
+        lhs = node.symbol or node.name
+        if node.formula:
+            return f"{lhs} = {node.formula}"
+        deps = ", ".join(node.deps)
+        return f"{lhs} = \\operatorname{{{node.name}}}({deps})"
+
+    def formulas(self) -> dict[str, str]:
+        return {
+            name: self.formula_of(name)
+            for name, idx in self._indices.items()
+            if self._graph[idx].kind is NodeKind.FORMULA
+        }
+
+    def to_mermaid(
+        self,
+        *,
+        math_labels: bool = False,
+        show_kinds: bool = False,
+        output_profile: str | None = None,
+    ) -> str:
+        output_nodes = (
+            set(self._output_profiles.get(output_profile, {}).values())
+            if output_profile
+            else set()
+        )
+
+        def label(name: str) -> str:
+            if not math_labels:
+                return name
+            return self.formula_of(name).replace('"', "'")
+
+        lines = ["flowchart LR"]
+        for a, b in self.edges():
+            if math_labels:
+                lines.append(f'    {a}["{label(a)}"] --> {b}["{label(b)}"]')
+            else:
+                lines.append(f"    {a} --> {b}")
+        if show_kinds:
+            market_outputs = {out for req in self._market for out in req.outputs.values()}
+            for name, idx in self._indices.items():
+                node = self._graph[idx]
+                classes = []
+                if node.kind is NodeKind.INPUT:
+                    classes.append("input")
+                else:
+                    classes.append("formula")
+                if name in market_outputs:
+                    classes.append("market")
+                if name in output_nodes:
+                    classes.append("output")
+                for cls in classes:
+                    lines.append(f"    class {name} {cls}")
         return "\n".join(lines)
+
+    def info(self, *, output_profile: str | None = None) -> GraphInfo:
+        output_nodes = self._resolve_outputs(None, output_profile) if output_profile else {}
+        selected = set(output_nodes.values())
+        formula_nodes = tuple(
+            name
+            for name in self.topological_order()
+            if self._graph[self._indices[name]].kind is NodeKind.FORMULA
+        )
+        return GraphInfo(
+            name=self.name,
+            required_inputs=tuple(sorted(self.required_inputs())),
+            market_inputs=tuple(sorted({k for req in self._market for k in req.left_keys})),
+            market_outputs=tuple(
+                sorted({out for req in self._market for out in req.outputs.values()})
+            ),
+            formula_nodes=formula_nodes,
+            intermediate_nodes=tuple(name for name in formula_nodes if name not in selected),
+            output_nodes=output_nodes,
+            output_dtypes=self.output_dtypes(output_profile) if output_profile else {},
+        )
+
+    def explain(self, target: str | None = None, *, output_profile: str | None = None) -> str:
+        if target is None and output_profile is None:
+            raise ValueError("pass target=... or output_profile=...")
+        if target is not None:
+            targets = [target]
+        else:
+            if output_profile is None:
+                raise ValueError("pass target=... or output_profile=...")
+            targets = list(self._output_profiles[output_profile].values())
+        needed = set(targets)
+        for item in targets:
+            needed |= self.dependencies_of(item)
+        path = [
+            name
+            for name in self.topological_order()
+            if name in needed and self._graph[self._indices[name]].kind is NodeKind.FORMULA
+        ]
+        info = self.info(output_profile=output_profile)
+        lines = [f"Graph: {self.name}"]
+        lines.append("Required inputs: " + (", ".join(info.required_inputs) or "-"))
+        lines.append("Market outputs: " + (", ".join(info.market_outputs) or "-"))
+        lines.append("Formula path:")
+        for name in path:
+            desc = self._graph[self._indices[name]].description
+            suffix = f"  # {desc}" if desc else ""
+            lines.append(f"  - {self.formula_of(name)}{suffix}")
+        return "\n".join(lines)
+
+    def validate_outputs(self, profile: str, schema: object) -> None:
+        mapping = self._resolve_outputs(None, profile)
+        fields = set(cast(Any, schema).to_schema().columns.keys())
+        missing = sorted(fields - set(mapping))
+        if missing:
+            raise ValueError(f"output profile {profile!r} is missing schema fields: {missing}")
+        unknown = sorted(node for node in mapping.values() if node not in self._indices)
+        if unknown:
+            raise ValueError(f"output profile {profile!r} maps to unknown nodes: {unknown}")
 
     def required_inputs(self) -> set[str]:
         """The columns a caller must supply: leaf INPUT nodes, minus what market

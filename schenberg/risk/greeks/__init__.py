@@ -17,9 +17,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import polars as pl
+from pandera.typing.polars import LazyFrame
 
+from schenberg.core.columns import cols
 from schenberg.domain.enums import GreeksBackend, OptionKind
-from schenberg.domain.schemas.option import OptionGreeks
+from schenberg.domain.schemas.option import OptionGreeks, OptionPricedState
 from schenberg.math.black_scholes import (
     GREEK_NAMES,
     Greeks,
@@ -44,6 +46,10 @@ _KERNELS = {
 
 # Output columns driven by the contract, so frame and schema cannot drift.
 _GREEK_COLUMNS = tuple(OptionGreeks.to_schema().columns.keys())
+STATE = cols(OptionPricedState)
+GREEKS = cols(OptionGreeks)
+_ETA_COL = "_eta"
+_GREEKS_COL = "_greeks"
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,46 +66,48 @@ class GreeksEngine:
         """Run the chosen kernel: numpy in, dict-of-arrays out. ``eta`` is +1/-1."""
         return _KERNELS[self.backend](spot, strike, rate, carry, vol, ttm, eta)
 
-    def attach(
-        self,
-        lf: pl.LazyFrame,
-        *,
-        kind_col: str = "option_kind",
-        carry_col: str = "cost_of_carry",
-        ttm_col: str = "ttm",
-    ) -> pl.LazyFrame:
-        """Add the :class:`OptionGreeks` columns to a priced frame — stays lazy.
+    def attach(self, lf: LazyFrame[OptionPricedState]) -> pl.LazyFrame:
+        """Add the :class:`OptionGreeks` columns to a priced option state.
 
-        Expects the columns the pricing graph already surfaced: ``spot``,
-        ``strike``, ``rate``, the cost of carry, ``vol`` and a time-to-maturity.
-        Vectorized via ``map_batches`` — never a row-wise UDF.
+        The contract supplies ``spot``, ``strike``, ``rate``, ``cost_of_carry``,
+        ``vol`` and ``year_fraction``. Vectorized via ``map_batches`` — never a
+        row-wise UDF.
         """
-        fields = ["spot", "strike", "rate", carry_col, "vol", ttm_col, "_eta"]
+        fields = [
+            STATE.spot.name,
+            STATE.strike.name,
+            STATE.rate.name,
+            STATE.cost_of_carry.name,
+            STATE.vol.name,
+            STATE.year_fraction.name,
+            _ETA_COL,
+        ]
         struct_dtype = pl.Struct({name: pl.Float64 for name in _GREEK_COLUMNS})
 
         def run(s: pl.Series) -> pl.Series:
             col = {f: s.struct.field(f).to_numpy() for f in fields}
             greeks = self.compute(
-                spot=col["spot"],
-                strike=col["strike"],
-                rate=col["rate"],
-                carry=col[carry_col],
-                vol=col["vol"],
-                ttm=col[ttm_col],
-                eta=col["_eta"],
+                spot=col[STATE.spot.name],
+                strike=col[STATE.strike.name],
+                rate=col[STATE.rate.name],
+                carry=col[STATE.cost_of_carry.name],
+                vol=col[STATE.vol.name],
+                ttm=col[STATE.year_fraction.name],
+                eta=col[_ETA_COL],
             )
             return pl.DataFrame({name: greeks[name] for name in _GREEK_COLUMNS}).to_struct()
 
-        return (
+        result = (
             lf.with_columns(
-                pl.when(pl.col(kind_col) == OptionKind.CALL.value)
+                pl.when(STATE.option_kind.expr() == OptionKind.CALL.value)
                 .then(1.0)
                 .otherwise(-1.0)
-                .alias("_eta")
+                .alias(_ETA_COL)
             )
             .with_columns(
-                pl.struct(fields).map_batches(run, return_dtype=struct_dtype).alias("_greeks")
+                pl.struct(fields).map_batches(run, return_dtype=struct_dtype).alias(_GREEKS_COL)
             )
-            .drop("_eta")
-            .unnest("_greeks")
+            .drop(_ETA_COL)
+            .unnest(_GREEKS_COL)
         )
+        return result
