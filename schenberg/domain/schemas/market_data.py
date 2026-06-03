@@ -21,7 +21,6 @@ class EnergyForwardCurveContract(DataFrameModel):
     submarket: str
     delivery_period: str
     forward_price: float
-    settle_days: int
 
 
 class FixingContract(DataFrameModel):

@@ -10,7 +10,9 @@ class ForwardTrade(DataFrameModel):
     settlement_type: str
     currency: str
     id_indexador: int
-    payment_days: int
+    # Optional: generic forwards carry an explicit settlement horizon, while
+    # energy forwards derive it from the delivery period's ANBIMA fixing date.
+    payment_days: int | None
 
 
 class EnergyForwardLeg(ForwardTrade):

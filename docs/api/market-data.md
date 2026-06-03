@@ -24,6 +24,14 @@
 
 ::: schenberg.market_data.fixings
 
+## Date rules
+
+::: schenberg.market_data.date_rules
+
+## ANBIMA calendar
+
+::: schenberg.market_data.calendar.anbima
+
 ## Shocks
 
 ::: schenberg.market_data.shocks

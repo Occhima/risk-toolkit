@@ -5,8 +5,10 @@ Run with:  uv run python examples/02_energy_forward.py
 The energy pricer reuses the generic forward backbone
 (``forward_price - strike -> future_value -> present_value -> value``) and only
 adds *where the numbers come from*: it looks up ``forward_price`` on the energy
-curve by (submarket, delivery_period), discounts on the DI curve, and converts
-to the reporting currency via FX. The math graph never mentions "energy".
+curve by (submarket, delivery_period), and derives the discount tenor from the
+delivery period's ANBIMA settlement date (the 6th business day after month-end)
+versus ``as_of`` — no ``payment_days`` column on the input. It then discounts on
+the DI curve and converts via FX. The math graph never mentions "energy".
 """
 
 from __future__ import annotations
@@ -31,7 +33,6 @@ market = MarketSnapshot.from_sources(
                     "submarket": ["SE", "SE"],
                     "delivery_period": ["2026-07", "2026-08"],
                     "forward_price": [120.0, 130.0],
-                    "settle_days": [30, 60],
                 }
             ).lazy(),
         ),
@@ -39,10 +40,10 @@ market = MarketSnapshot.from_sources(
             "di_curve",
             pl.DataFrame(
                 {
-                    "curve_name": ["DI", "DI"],
-                    "id_indexador": [1, 1],
-                    "tenor_days": [30, 60],
-                    "zero_rate": [0.10, 0.10],
+                    "curve_name": ["DI"] * 366,
+                    "id_indexador": [1] * 366,
+                    "tenor_days": list(range(366)),
+                    "zero_rate": [0.10] * 366,
                 }
             ).lazy(),
         ),
@@ -62,7 +63,6 @@ legs = cast(
             "submarket": ["SE", "SE"],
             "delivery_period": ["2026-07", "2026-08"],
             "id_indexador": [1, 1],
-            "payment_days": [30, 60],
             "strike": [100.0, 100.0],
             "currency": ["BRL", "BRL"],
         }

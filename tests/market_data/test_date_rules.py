@@ -7,9 +7,11 @@ import polars as pl
 import pytest
 from schenberg.domain.schemas.market_data import FixingContract
 from schenberg.market_data.date_rules import (
+    business_day_count_expr,
     constant_month_of_tenor_year,
     copy_date,
     energy_settlement_date,
+    energy_settlement_date_expr,
     first_day_of_tenor_month,
     start_of_tenor_year,
     with_date_rule,
@@ -96,6 +98,40 @@ def test_energy_settlement_date_custom_columns_and_offset() -> None:
 def test_energy_settlement_date_rejects_non_positive_offset() -> None:
     with pytest.raises(ValueError, match="must be >= 1"):
         energy_settlement_date(business_days_after_month_end=0)
+
+
+def test_energy_settlement_date_expr_operates_on_an_expression() -> None:
+    lf = pl.DataFrame({"period": ["2026-07"]}).lazy()
+    result = cast(
+        pl.DataFrame,
+        lf.with_columns(energy_settlement_date_expr(pl.col("period")).alias("settle")).collect(),
+    )
+    assert result["settle"].to_list() == [date(2026, 8, 10)]
+
+
+def test_business_day_count_expr_counts_weekdays_inclusive_exclusive() -> None:
+    # Mon 2026-06-01 .. Mon 2026-06-08 exclusive, weekends only -> 5 business days.
+    lf = pl.DataFrame({"start": [date(2026, 6, 1)], "end": [date(2026, 6, 8)]}).lazy()
+    result = cast(
+        pl.DataFrame,
+        lf.with_columns(
+            business_day_count_expr(pl.col("start"), pl.col("end")).alias("n")
+        ).collect(),
+    )
+    assert result["n"].to_list() == [5]
+
+
+def test_business_day_count_expr_skips_holidays() -> None:
+    lf = pl.DataFrame({"start": [date(2026, 6, 1)], "end": [date(2026, 6, 8)]}).lazy()
+    result = cast(
+        pl.DataFrame,
+        lf.with_columns(
+            business_day_count_expr(
+                pl.col("start"), pl.col("end"), holidays=[date(2026, 6, 3)]
+            ).alias("n")
+        ).collect(),
+    )
+    assert result["n"].to_list() == [4]
 
 
 def test_copy_date() -> None:

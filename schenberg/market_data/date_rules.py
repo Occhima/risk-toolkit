@@ -62,6 +62,43 @@ def constant_month_of_tenor_year(
 _ENERGY_SETTLE_BUSINESS_DAYS = 6
 
 
+def energy_settlement_date_expr(
+    period: pl.Expr,
+    *,
+    business_days_after_month_end: int = _ENERGY_SETTLE_BUSINESS_DAYS,
+    holidays: Iterable[date] = (),
+) -> pl.Expr:
+    """Settlement / fixing date for an energy delivery-period expression.
+
+    ``period`` is a ``"YYYY-MM"`` string expression; the result is the
+    ``business_days_after_month_end``-th business day *after* the last calendar
+    day of that month, skipping weekends and any ``holidays``. ``roll="backward"``
+    anchors on the last business day on-or-before month-end, so the count means
+    "Nth business day after the month" whether or not the month ends on a
+    weekend/holiday.
+    """
+    if business_days_after_month_end < 1:
+        raise ValueError(
+            f"business_days_after_month_end must be >= 1, got {business_days_after_month_end}"
+        )
+    month_end = pl.format("{}-01", period).str.to_date("%Y-%m-%d").dt.month_end()
+    return month_end.dt.add_business_days(
+        business_days_after_month_end,
+        holidays=list(holidays),
+        roll="backward",
+    )
+
+
+def business_day_count_expr(
+    start: pl.Expr,
+    end: pl.Expr,
+    *,
+    holidays: Iterable[date] = (),
+) -> pl.Expr:
+    """Business days from ``start`` (inclusive) to ``end`` (exclusive) — BUS/252."""
+    return pl.business_day_count(start, end, holidays=list(holidays))
+
+
 def energy_settlement_date(
     *,
     period_col: str = "delivery_period",
@@ -71,27 +108,17 @@ def energy_settlement_date(
 ) -> pl.Expr:
     """Map an energy delivery period to its settlement / fixing date.
 
-    The delivery period is a ``"YYYY-MM"`` string; the fixing is the
-    ``business_days_after_month_end``-th business day *after* the last calendar
-    day of that month, skipping weekends and any ``holidays`` supplied. Pass the
-    ANBIMA holiday set to honour the full calendar — with no holidays only
-    weekends are skipped.
+    Column-named convenience wrapper over :func:`energy_settlement_date_expr`;
+    pass the ANBIMA holiday set to honour the full calendar — with no holidays
+    only weekends are skipped.
 
     Example: ``"2029-06"`` ends on Sat 2029-06-30; with weekends only the 6th
     business day after is 2029-07-09.
     """
-    if business_days_after_month_end < 1:
-        raise ValueError(
-            f"business_days_after_month_end must be >= 1, got {business_days_after_month_end}"
-        )
-    month_end = pl.format("{}-01", pl.col(period_col)).str.to_date("%Y-%m-%d").dt.month_end()
-    # roll="backward" anchors on the last business day on-or-before month-end, so
-    # the count is "Nth business day after the month" whether or not the month
-    # ends on a weekend/holiday.
-    return month_end.dt.add_business_days(
-        business_days_after_month_end,
-        holidays=list(holidays),
-        roll="backward",
+    return energy_settlement_date_expr(
+        pl.col(period_col),
+        business_days_after_month_end=business_days_after_month_end,
+        holidays=holidays,
     ).alias(output_col)
 
 

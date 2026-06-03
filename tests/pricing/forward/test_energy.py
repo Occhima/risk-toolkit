@@ -19,7 +19,7 @@ def test_price_energy_forward_returns_instrument_price_not_output(
     assert result.columns == ["instrument_type", "instrument_id", "price"]
     assert result.select("instrument_id").item() == "ENG-1"
     assert result.select("instrument_type").item() == "FORWARD"
-    assert result.select("price").item() == pytest.approx(49.057467, rel=1e-6)
+    assert result.select("price").item() == pytest.approx(48.831742, rel=1e-6)
     assert not set(result.columns) & {"quantity", "mtm", "mtm_local"}
 
     assert "EnergyForwardOutput" not in schemas.__all__
