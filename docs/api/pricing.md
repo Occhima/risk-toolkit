@@ -22,4 +22,4 @@
 
 ## Options
 
-::: schenberg.pricing.instruments.options
+::: schenberg.pricing.instruments.option.prices

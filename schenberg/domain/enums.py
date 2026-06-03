@@ -23,11 +23,6 @@ class SettlementType(StrEnum):
     CASH_SETTLED = "CASH_SETTLED"
 
 
-class BuySell(StrEnum):
-    BUY = "BUY"
-    SELL = "SELL"
-
-
 class OptionModel(StrEnum):
     """How the cost of carry ``b`` in the generalized BSM formula is formed.
 

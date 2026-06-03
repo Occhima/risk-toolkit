@@ -2,13 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import pandera.polars as pa
-from pandera.typing.polars import LazyFrame
-
 from schenberg.core.market import MarketRequirement
-from schenberg.domain.schemas.market_data import EnergyForwardCurveContract
 from schenberg.market_data.requirements import require
-from schenberg.market_data.sources import MarketSource
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,25 +27,3 @@ class EnergyForwardCurveSpec:
                 "settle_days": settle_days_output,
             },
         )
-
-
-@dataclass(frozen=True, slots=True)
-class EnergyForwardCurve:
-    data: LazyFrame[EnergyForwardCurveContract]
-    name: str = "energy_forward_curve"
-
-    @classmethod
-    @pa.check_types(lazy=True)
-    def build(
-        cls,
-        data: LazyFrame[EnergyForwardCurveContract],
-        *,
-        name: str = "energy_forward_curve",
-    ) -> EnergyForwardCurve:
-        return cls(data=data, name=name)
-
-    def source(self) -> MarketSource:
-        return MarketSource(name=self.name, data=self.data, schema=EnergyForwardCurveContract)
-
-    def spec(self) -> EnergyForwardCurveSpec:
-        return EnergyForwardCurveSpec(name=self.name)

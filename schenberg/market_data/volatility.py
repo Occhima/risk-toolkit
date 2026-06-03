@@ -19,7 +19,6 @@ from numpy.typing import ArrayLike, NDArray
 from pandera.typing.polars import LazyFrame
 
 from schenberg.domain.schemas.market_data import VolSurfaceContract
-from schenberg.market_data.sources import MarketSource
 from schenberg.math.interpolation import bilinear
 
 
@@ -93,17 +92,3 @@ class VolSurface:
             .map_batches(interpolate, return_dtype=pl.Float64)
             .alias(output)
         )
-
-
-@dataclass(frozen=True, slots=True)
-class VolSurfaceSource:
-    """Carries the raw surface quotes inside a :class:`MarketSnapshot`."""
-
-    data: LazyFrame[VolSurfaceContract]
-    name: str = "vol_surface"
-
-    def source(self) -> MarketSource:
-        return MarketSource(name=self.name, data=self.data, schema=VolSurfaceContract)
-
-    def surface(self) -> VolSurface:
-        return VolSurface.from_quotes(self.data, name=self.name)

@@ -27,11 +27,3 @@ class OptionPricing(DataFrameModel):
     d1: float
     d2: float
     price: float
-
-
-class OptionGreeks(DataFrameModel):
-    delta: float
-    gamma: float
-    vega: float
-    theta: float
-    rho: float
