@@ -1,0 +1,30 @@
+from __future__ import annotations
+
+from datetime import date
+
+from schenberg.domain.base import DataFrameModel
+
+
+class DiCurveContract(DataFrameModel):
+    curve_name: str
+    id_indexador: int
+    tenor_days: int
+    zero_rate: float
+
+
+class FxRatesContract(DataFrameModel):
+    currency: str
+    fx_rate: float
+
+
+class EnergyForwardCurveContract(DataFrameModel):
+    submarket: str
+    delivery_period: str
+    forward_price: float
+    settle_days: int
+
+
+class FixingContract(DataFrameModel):
+    id_indexador: int
+    fixing_date: date
+    fixing_value: float

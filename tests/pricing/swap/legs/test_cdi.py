@@ -6,16 +6,27 @@ from typing import cast
 
 import polars as pl
 import pytest
-from schenberg.core.market import MarketSnapshot
+from schenberg.market_data.snapshot import MarketSnapshot
+from schenberg.market_data.sources import MarketSource
 from schenberg.pricing.instruments.swap.legs.cdi import cdi_swap_leg_graph
 
 
 def test_cdi_leg_pricing_preserves_formula() -> None:
-    market = MarketSnapshot(
+    market = MarketSnapshot.from_sources(
         as_of=date(2026, 6, 3),
-        curves=pl.DataFrame(
-            {"id_indexador": [1], "tenor_days": [252], "zero_rate": [0.1], "forward_rate": [0.12]}
-        ).lazy(),
+        sources=[
+            MarketSource(
+                "curves",
+                pl.DataFrame(
+                    {
+                        "id_indexador": [1],
+                        "tenor_days": [252],
+                        "zero_rate": [0.1],
+                        "forward_rate": [0.12],
+                    }
+                ).lazy(),
+            )
+        ],
     )
     leg = pl.DataFrame(
         {

@@ -13,6 +13,7 @@ authors = [{ name = "Schenberg contributors" }]
 dependencies = [
   "pandera[polars]>=0.25",
   "polars>=1.30",
+  "pandas>=2.2",
   "rustworkx>=0.16",
 ]
 

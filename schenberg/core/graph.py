@@ -7,7 +7,7 @@ signature. Nothing in this module calls .collect().
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from inspect import signature
@@ -16,7 +16,9 @@ from typing import Any, cast
 import polars as pl
 import rustworkx as rx
 
-from .market import MarketRequirement, MarketSnapshot
+from schenberg.market_data.snapshot import MarketSnapshot
+
+from .market import MarketRequirement
 
 ExprFn = Callable[..., pl.Expr]
 
@@ -236,6 +238,7 @@ class ExprGraph:
         expression, add them with one with_columns. Stays lazy."""
         lf = self._attach_market(lf, market)
         mapping = self._resolve_outputs(outputs, output_profile)
+        lf = self._with_missing_inputs(lf, mapping.values())
         cache: dict[str, pl.Expr] = {}  # share intermediates across outputs
         columns = [self.expr(node, _cache=cache).alias(col) for col, node in mapping.items()]
         return lf.with_columns(columns)
@@ -293,6 +296,21 @@ class ExprGraph:
                 lf = market.attach(lf, req)
         return lf
 
+    def _with_missing_inputs(self, lf: pl.LazyFrame, targets: Iterable[str]) -> pl.LazyFrame:
+        required = {
+            dep
+            for target in targets
+            for dep in self.dependencies_of(target) | {target}
+            if self._graph[self._indices[dep]].kind is NodeKind.INPUT
+        }
+        if not required:
+            return lf
+        present = set(lf.collect_schema().names())
+        missing = sorted(required - present)
+        if not missing:
+            return lf
+        return lf.with_columns(pl.lit(None).alias(name) for name in missing)
+
     def _resolve_outputs(
         self, outputs: Mapping[str, str] | None, profile: str | None
     ) -> dict[str, str]:
@@ -346,7 +364,6 @@ class ExprGraph:
             col: self._graph[self._indices[node]].dtype
             for col, node in self._output_profiles[profile].items()
         }
-
 
 
 def __getattr__(name: str) -> Any:

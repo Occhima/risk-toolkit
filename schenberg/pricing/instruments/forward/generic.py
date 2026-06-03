@@ -10,8 +10,13 @@ from __future__ import annotations
 import polars as pl
 
 from schenberg.core.graph import ExprGraph
-from schenberg.core.market import curve, fx
-from schenberg.domain.schemas import ForwardPricing
+from schenberg.domain.schemas.forward import ForwardPricing
+from schenberg.market_data.curves.di import DiCurveSpec
+from schenberg.market_data.fx import FxRatesSpec
+
+DI = DiCurveSpec("di_curve")
+FX = FxRatesSpec("fx_rates")
+
 
 forward_valuation_graph = ExprGraph("forward_valuation")
 
@@ -52,16 +57,13 @@ def value(present_value: pl.Expr, fx_rate: pl.Expr) -> pl.Expr:
     return present_value * fx_rate
 
 
-forward_valuation_graph.with_outputs(
-    "pricing",
-    ForwardPricing,
-)
+forward_valuation_graph.with_outputs("pricing", ForwardPricing)
 
 base_forward_graph = (
     ExprGraph.compose("base_forward", forward_valuation_graph)
     .with_market(
-        curve("zero_rate"),
-        fx(),
+        DI.zero_rate(),
+        FX.fx_rate(),
     )
     .with_outputs("pricing", ForwardPricing)
 )

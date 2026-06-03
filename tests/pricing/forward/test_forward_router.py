@@ -9,7 +9,7 @@ from schenberg.pricing.api import price_forwards
 def test_forward_router_routes_energy_and_generic_rows(energy_inputs, energy_market) -> None:
     generic = pl.DataFrame(
         {
-            "trade_id": ["GEN-1"],
+            "instrument_id": ["GEN-1"],
             "instrument_type": ["FORWARD"],
             "forward_family": ["GENERIC"],
             "settlement_type": ["CASH_SETTLED"],
@@ -17,11 +17,9 @@ def test_forward_router_routes_energy_and_generic_rows(energy_inputs, energy_mar
             "id_indexador": [1],
             "payment_days": [30],
             "future_value": [100.0],
-            "contract_id": [None],
             "submarket": [None],
             "delivery_period": [None],
             "buy_sell": [None],
-            "quantity": [None],
             "strike": [None],
         }
     ).lazy()

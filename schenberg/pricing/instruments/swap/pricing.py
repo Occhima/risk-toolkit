@@ -9,9 +9,9 @@ import polars as pl
 from pandera.typing.polars import LazyFrame
 
 from schenberg.core.columns import cols
-from schenberg.core.market import MarketSnapshot
 from schenberg.domain.enums import PayReceive
 from schenberg.domain.schemas import LegPricing, SwapInput, SwapLegInput, SwapOutput
+from schenberg.market_data.snapshot import MarketSnapshot
 
 # Import side-effect registrations explicitly.
 from schenberg.pricing.instruments.swap import legs as _legs  # noqa: F401

@@ -20,9 +20,9 @@ def test_price_swap_returns_aggregated_npv(swap_inputs, swap_market) -> None:
 def test_price_energy_forward_uses_generic_forward_outputs(energy_inputs, energy_market) -> None:
     result = cast(pl.DataFrame, price_energy_forward(energy_inputs, energy_market).collect())
 
-    assert result.select("contract_id").item() == "ENG-1"
-    assert result.select("mtm_local").item() == pytest.approx(490.574670, rel=1e-6)
-    assert result.select("mtm").item() == pytest.approx(490.574670, rel=1e-6)
+    assert result.select("instrument_id").item() == "ENG-1"
+    assert result.select("mtm_local").item() == pytest.approx(49.057467, rel=1e-6)
+    assert result.select("mtm").item() == pytest.approx(49.057467, rel=1e-6)
     assert energy_forward_graph.output_dtypes("pricing").keys() == {
         "future_value",
         "present_value",

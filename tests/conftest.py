@@ -4,35 +4,47 @@ from datetime import date
 
 import polars as pl
 import pytest
-from schenberg.core.market import MarketSnapshot
+from schenberg.market_data.snapshot import MarketSnapshot
+from schenberg.market_data.sources import MarketSource
 
 
 @pytest.fixture
 def swap_market() -> MarketSnapshot:
-    return MarketSnapshot(
+    return MarketSnapshot.from_sources(
         as_of=date(2026, 6, 3),
-        curves=pl.DataFrame(
-            {
-                "id_indexador": [1, 2],
-                "tenor_days": [252, 252],
-                "zero_rate": [0.10, 0.05],
-                "forward_rate": [0.12, None],
-            }
-        ).lazy(),
-        fixings=pl.DataFrame(
-            {
-                "id_indexador": [2],
-                "fixing_date": [date(2026, 6, 3)],
-                "fixing_value": [100.0],
-            }
-        ).lazy(),
-        projected_indexes=pl.DataFrame(
-            {
-                "id_indexador": [2],
-                "tenor_days": [252],
-                "projected_index": [106.0],
-            }
-        ).lazy(),
+        sources=[
+            MarketSource(
+                "curves",
+                pl.DataFrame(
+                    {
+                        "id_indexador": [1, 2],
+                        "tenor_days": [252, 252],
+                        "zero_rate": [0.10, 0.05],
+                        "forward_rate": [0.12, None],
+                    }
+                ).lazy(),
+            ),
+            MarketSource(
+                "fixings",
+                pl.DataFrame(
+                    {
+                        "id_indexador": [2],
+                        "fixing_date": [date(2026, 6, 3)],
+                        "fixing_value": [100.0],
+                    }
+                ).lazy(),
+            ),
+            MarketSource(
+                "projected_indexes",
+                pl.DataFrame(
+                    {
+                        "id_indexador": [2],
+                        "tenor_days": [252],
+                        "projected_index": [106.0],
+                    }
+                ).lazy(),
+            ),
+        ],
     )
 
 
@@ -59,24 +71,36 @@ def swap_inputs() -> pl.LazyFrame:
 
 @pytest.fixture
 def energy_market() -> MarketSnapshot:
-    return MarketSnapshot(
+    return MarketSnapshot.from_sources(
         as_of=date(2026, 6, 3),
-        curves=pl.DataFrame(
-            {
-                "id_indexador": [1, 1],
-                "tenor_days": [30, 60],
-                "zero_rate": [0.10, 0.10],
-            }
-        ).lazy(),
-        forward_curves=pl.DataFrame(
-            {
-                "submarket": ["SE", "SE"],
-                "delivery_period": ["2026-07", "2026-08"],
-                "forward_price": [120.0, 130.0],
-                "settle_days": [30, 60],
-            }
-        ).lazy(),
-        fx_rates=pl.DataFrame({"currency": ["BRL"], "fx_rate": [1.0]}).lazy(),
+        sources=[
+            MarketSource(
+                "di_curve",
+                pl.DataFrame(
+                    {
+                        "curve_name": ["DI", "DI"],
+                        "id_indexador": [1, 1],
+                        "tenor_days": [30, 60],
+                        "zero_rate": [0.10, 0.10],
+                    }
+                ).lazy(),
+            ),
+            MarketSource(
+                "energy_forward_curve",
+                pl.DataFrame(
+                    {
+                        "submarket": ["SE", "SE"],
+                        "delivery_period": ["2026-07", "2026-08"],
+                        "forward_price": [120.0, 130.0],
+                        "settle_days": [30, 60],
+                    }
+                ).lazy(),
+            ),
+            MarketSource(
+                "fx_rates",
+                pl.DataFrame({"currency": ["BRL"], "fx_rate": [1.0]}).lazy(),
+            ),
+        ],
     )
 
 
@@ -84,18 +108,15 @@ def energy_market() -> MarketSnapshot:
 def energy_inputs() -> pl.LazyFrame:
     return pl.DataFrame(
         {
-            "trade_id": ["ENG-1-2026-07", "ENG-1-2026-08"],
+            "instrument_id": ["ENG-1", "ENG-1"],
             "instrument_type": ["FORWARD", "FORWARD"],
             "forward_family": ["ENERGY", "ENERGY"],
             "settlement_type": ["PHYSICAL", "PHYSICAL"],
-            "contract_id": ["ENG-1", "ENG-1"],
             "submarket": ["SE", "SE"],
             "delivery_period": ["2026-07", "2026-08"],
             "buy_sell": ["BUY", "BUY"],
             "id_indexador": [1, 1],
             "payment_days": [30, 60],
-            "future_value": [None, None],
-            "quantity": [10.0, 10.0],
             "strike": [100.0, 100.0],
             "currency": ["BRL", "BRL"],
         }
