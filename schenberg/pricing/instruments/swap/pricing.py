@@ -25,12 +25,6 @@ _COMMON = ["swap_id", "notional", "payment_days", "accrual", "base_date"]
 
 def swap_to_legs(swaps: pl.LazyFrame) -> pl.LazyFrame:
     """Wide swap rows -> normalized long leg rows."""
-    names = set(swaps.collect_schema().names())
-
-    def currency(side: str) -> pl.Expr:
-        column = f"currency_{side}"
-        source = pl.col(column) if column in names else pl.lit(None, dtype=pl.Utf8)
-        return source.alias(L.currency.name)
 
     def leg(side: str, pay_receive: PayReceive) -> pl.LazyFrame:
         return swaps.select(
@@ -42,7 +36,6 @@ def swap_to_legs(swaps: pl.LazyFrame) -> pl.LazyFrame:
             pl.col(f"fixed_rate_{side}").alias(L.fixed_rate.name),
             pl.col(f"real_coupon_{side}").alias(L.real_coupon.name),
             pl.lit(None, dtype=pl.Float64).alias(L.cashflow_amount.name),
-            currency(side),
         )
 
     return pl.concat(

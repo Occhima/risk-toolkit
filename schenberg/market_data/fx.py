@@ -20,13 +20,11 @@ class FxRatesSpec:
         *,
         currency_col: str = "currency",
         output: str = "fx_rate",
-        optional: bool = False,
     ) -> MarketRequirement:
         return require(
             self.name,
             (currency_col, "currency"),
             outputs={"fx_rate": output},
-            optional=optional,
         )
 
 

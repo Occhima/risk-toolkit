@@ -21,9 +21,6 @@ class SwapInput(DataFrameModel):
     fixed_rate_passivo: float = pa.Field(nullable=True)
     real_coupon_ativo: float = pa.Field(nullable=True)
     real_coupon_passivo: float = pa.Field(nullable=True)
-    # Per-leg reporting currency; absent means a single-currency (local) swap.
-    currency_ativo: str | None = pa.Field(nullable=True)
-    currency_passivo: str | None = pa.Field(nullable=True)
 
 
 class SwapLegInput(DataFrameModel):
@@ -39,8 +36,6 @@ class SwapLegInput(DataFrameModel):
     fixed_rate: float = pa.Field(nullable=True)
     real_coupon: float = pa.Field(nullable=True)
     cashflow_amount: float = pa.Field(nullable=True)
-    # Leg reporting currency; joined to fx_rates when present.
-    currency: str | None = pa.Field(nullable=True)
 
 
 class SwapOutput(DataFrameModel):
