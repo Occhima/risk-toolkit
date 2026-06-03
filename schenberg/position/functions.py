@@ -7,41 +7,13 @@ import polars as pl
 from pandera.typing.polars import LazyFrame
 
 from schenberg.core.columns import cols
-from schenberg.domain.enums import InstrumentType
-from schenberg.domain.schemas.forward import ForwardPricing, ForwardTrade
 from schenberg.domain.schemas.position import InstrumentPrice, Position, PricedPosition
-from schenberg.market_data.snapshot import MarketSnapshot
-from schenberg.pricing.instruments.forward import forward_router
+from schenberg.pricing.instruments.forward.prices import price_forward_instruments
 
-F = cols(ForwardTrade)
-P = cols(ForwardPricing)
 POS = cols(Position)
 PX = cols(InstrumentPrice)
 
-
-@pa.check_types(lazy=True)
-def price_forward_instruments(
-    forwards: LazyFrame[ForwardTrade],
-    market: MarketSnapshot,
-) -> LazyFrame[InstrumentPrice]:
-    priced = forward_router.compute_for(
-        forwards,
-        market=market,
-        output_profile="pricing",
-    )
-
-    result = (
-        priced.group_by(F.instrument_id.name)
-        .agg(price=P.value.expr().sum())
-        .with_columns(instrument_type=pl.lit(InstrumentType.FORWARD.value))
-        .select(
-            PX.instrument_type.name,
-            PX.instrument_id.name,
-            PX.price.name,
-        )
-    )
-
-    return cast(LazyFrame[InstrumentPrice], result)
+__all__ = ["pnl_from_priced_positions", "price_forward_instruments", "with_prices"]
 
 
 @pa.check_types(lazy=True)
@@ -56,7 +28,7 @@ def with_prices(
             how="left",
         )
         .with_columns(
-            mtm=POS.quantity.expr() * PX.price.expr(),
+            mtm=POS.side.expr() * POS.quantity.expr() * PX.price.expr(),
         )
         .select(
             POS.position_id.name,
@@ -64,6 +36,7 @@ def with_prices(
             POS.instrument_type.name,
             POS.instrument_id.name,
             POS.quantity.name,
+            POS.side.name,
             PX.price.name,
             "mtm",
         )
@@ -77,23 +50,28 @@ def pnl_from_priced_positions(
     today: LazyFrame[PricedPosition],
     previous: LazyFrame[PricedPosition],
 ) -> pl.LazyFrame:
-    result = (
-        today.rename({"price": "price_today", "mtm": "mtm_today"})
-        .join(
-            previous.rename({"price": "price_previous", "mtm": "mtm_previous"}),
-            on=[
-                POS.position_id.name,
-                POS.book.name,
-                POS.instrument_type.name,
-                POS.instrument_id.name,
-                POS.quantity.name,
-            ],
-            how="inner",
-        )
-        .with_columns(
-            price_pnl=POS.quantity.expr() * (pl.col("price_today") - pl.col("price_previous")),
-            mtm_pnl=pl.col("mtm_today") - pl.col("mtm_previous"),
-        )
+    today_view = today.rename({"price": "price_today", "mtm": "mtm_today"})
+    previous_view = previous.select(
+        POS.position_id.name,
+        POS.book.name,
+        POS.instrument_type.name,
+        POS.instrument_id.name,
+        pl.col("price").alias("price_previous"),
+        pl.col("mtm").alias("mtm_previous"),
     )
 
-    return result
+    return today_view.join(
+        previous_view,
+        on=[
+            POS.position_id.name,
+            POS.book.name,
+            POS.instrument_type.name,
+            POS.instrument_id.name,
+        ],
+        how="inner",
+    ).with_columns(
+        price_pnl=pl.col("side")
+        * pl.col("quantity")
+        * (pl.col("price_today") - pl.col("price_previous")),
+        mtm_pnl=pl.col("mtm_today") - pl.col("mtm_previous"),
+    )

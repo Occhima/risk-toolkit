@@ -114,7 +114,6 @@ def energy_inputs() -> pl.LazyFrame:
             "settlement_type": ["PHYSICAL", "PHYSICAL"],
             "submarket": ["SE", "SE"],
             "delivery_period": ["2026-07", "2026-08"],
-            "buy_sell": ["BUY", "BUY"],
             "id_indexador": [1, 1],
             "payment_days": [30, 60],
             "strike": [100.0, 100.0],

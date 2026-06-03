@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import date
 from typing import cast
 
@@ -137,10 +138,11 @@ def test_energy_forward_graph_and_position_layer(energy_inputs, energy_market) -
                 "instrument_type": InstrumentType.FORWARD.value,
                 "instrument_id": "ENG-1",
                 "quantity": 100.0,
+                "side": 1.0,
             }
         ]
     )
-    valued = positions.pipe(with_prices, priced)
+    valued = positions.pipe(cast(Callable[..., pl.LazyFrame], with_prices), priced)
 
     priced_df = cast(pl.DataFrame, priced.collect())
     valued_df = cast(pl.DataFrame, valued.collect())
@@ -160,6 +162,7 @@ def test_pnl_from_priced_positions_can_be_called_independently() -> None:
                 "instrument_type": "FORWARD",
                 "instrument_id": "I",
                 "quantity": 2.0,
+                "side": 1.0,
                 "price": 6.0,
                 "mtm": 12.0,
             }
@@ -173,6 +176,7 @@ def test_pnl_from_priced_positions_can_be_called_independently() -> None:
                 "instrument_type": "FORWARD",
                 "instrument_id": "I",
                 "quantity": 2.0,
+                "side": 1.0,
                 "price": 5.0,
                 "mtm": 10.0,
             }
@@ -194,13 +198,14 @@ def test_valuation_pipe_exposes_intermediate_outputs(energy_inputs, energy_marke
                 "instrument_type": "FORWARD",
                 "instrument_id": "ENG-1",
                 "quantity": 100.0,
+                "side": 1.0,
             }
         ]
     )
 
     env = valuation_pipe.run(forwards=energy_inputs, positions=positions, market=energy_market)
 
-    assert {"forward_prices", "prices", "priced_positions", "book_mtm"}.issubset(env)
+    assert {"forward_prices", "priced_positions", "book_mtm"}.issubset(env)
     assert env["book_mtm"].collect().select("mtm").item() == pytest.approx(4905.7467, rel=1e-6)
 
 
@@ -242,7 +247,6 @@ def test_expected_user_workflow() -> None:
                 "payment_days": 21,
                 "submarket": "SE",
                 "delivery_period": "2026-07",
-                "buy_sell": "BUY",
                 "strike": 250.0,
             }
         ]
@@ -255,12 +259,13 @@ def test_expected_user_workflow() -> None:
                 "instrument_type": "FORWARD",
                 "instrument_id": "ENE-001",
                 "quantity": 100.0,
+                "side": 1.0,
             }
         ]
     )
 
     prices = price_forward_instruments(cast(LazyFrame[ForwardTrade], forwards), market)
-    priced_positions = positions.pipe(with_prices, prices)
+    priced_positions = positions.pipe(cast(Callable[..., pl.LazyFrame], with_prices), prices)
 
     assert cast(pl.DataFrame, priced_positions.collect()).select("mtm").item() == pytest.approx(
         cast(pl.DataFrame, prices.collect()).select("price").item() * 100.0

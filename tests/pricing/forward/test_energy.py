@@ -4,7 +4,7 @@ from typing import cast
 
 import polars as pl
 import pytest
-from schenberg.domain.schemas import EnergyForwardOutput
+from schenberg.domain import schemas
 from schenberg.domain.schemas.position import InstrumentPrice
 from schenberg.pricing.instruments.forward.energy import price_energy_forward
 
@@ -22,5 +22,4 @@ def test_price_energy_forward_returns_instrument_price_not_output(
     assert result.select("price").item() == pytest.approx(49.057467, rel=1e-6)
     assert not set(result.columns) & {"quantity", "mtm", "mtm_local"}
 
-    with pytest.raises(pl.exceptions.ColumnNotFoundError):
-        EnergyForwardOutput.validate(prices, lazy=True).collect()
+    assert "EnergyForwardOutput" not in schemas.__all__

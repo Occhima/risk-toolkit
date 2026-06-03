@@ -5,10 +5,10 @@ from dataclasses import dataclass
 import pandera.polars as pa
 from pandera.typing.polars import LazyFrame
 
-from schenberg.core.columns import ColumnSet
 from schenberg.core.market import MarketRequirement
 from schenberg.domain.schemas.market_data import DiCurveContract
 from schenberg.market_data.calendar.conventions import Calendar
+from schenberg.market_data.requirements import require
 from schenberg.market_data.sources import MarketSource
 
 
@@ -23,12 +23,10 @@ class DiCurveSpec:
         tenor_col: str = "payment_days",
         output: str = "zero_rate",
     ) -> MarketRequirement:
-        return MarketRequirement(
-            table=self.name,
-            on=ColumnSet.from_pairs(
-                (indexer_col, "id_indexador"),
-                (tenor_col, "tenor_days"),
-            ),
+        return require(
+            self.name,
+            (indexer_col, "id_indexador"),
+            (tenor_col, "tenor_days"),
             outputs={"zero_rate": output},
         )
 

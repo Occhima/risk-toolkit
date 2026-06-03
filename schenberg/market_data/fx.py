@@ -5,9 +5,9 @@ from dataclasses import dataclass
 import pandera.polars as pa
 from pandera.typing.polars import LazyFrame
 
-from schenberg.core.columns import ColumnSet
 from schenberg.core.market import MarketRequirement
 from schenberg.domain.schemas.market_data import FxRatesContract
+from schenberg.market_data.requirements import require
 from schenberg.market_data.sources import MarketSource
 
 
@@ -21,9 +21,9 @@ class FxRatesSpec:
         currency_col: str = "currency",
         output: str = "fx_rate",
     ) -> MarketRequirement:
-        return MarketRequirement(
-            table=self.name,
-            on=ColumnSet.from_pairs((currency_col, "currency")),
+        return require(
+            self.name,
+            (currency_col, "currency"),
             outputs={"fx_rate": output},
         )
 

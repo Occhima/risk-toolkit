@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import cast
 
 import polars as pl
 import pytest
+from pandera.typing.polars import LazyFrame
+from schenberg.domain.schemas.forward import ForwardTrade
 from schenberg.domain.schemas.position import InstrumentPrice, Position, PricedPosition
 from schenberg.position.functions import (
     pnl_from_priced_positions,
@@ -17,6 +20,7 @@ EXPECTED_PRICED_COLUMNS = [
     "instrument_type",
     "instrument_id",
     "quantity",
+    "side",
     "price",
     "mtm",
 ]
@@ -31,6 +35,7 @@ def test_with_prices_direct_pipe_and_schema() -> None:
                 "instrument_type": "FORWARD",
                 "instrument_id": "ENG-1",
                 "quantity": 100.0,
+                "side": 1.0,
             }
         ]
     )
@@ -39,7 +44,10 @@ def test_with_prices_direct_pipe_and_schema() -> None:
     )
 
     direct = cast(pl.DataFrame, with_prices(positions, prices).collect())
-    piped = cast(pl.DataFrame, positions.pipe(with_prices, prices).collect())
+    piped = cast(
+        pl.DataFrame,
+        positions.pipe(cast(Callable[..., pl.LazyFrame], with_prices), prices).collect(),
+    )
 
     assert direct.columns == EXPECTED_PRICED_COLUMNS
     assert piped.columns == EXPECTED_PRICED_COLUMNS
@@ -59,6 +67,7 @@ def test_pnl_from_priced_positions_direct_and_pipe() -> None:
                 "instrument_type": "FORWARD",
                 "instrument_id": "I",
                 "quantity": 2.0,
+                "side": 1.0,
                 "price": 6.0,
                 "mtm": 12.0,
             }
@@ -72,6 +81,7 @@ def test_pnl_from_priced_positions_direct_and_pipe() -> None:
                 "instrument_type": "FORWARD",
                 "instrument_id": "I",
                 "quantity": 2.0,
+                "side": 1.0,
                 "price": 5.0,
                 "mtm": 10.0,
             }
@@ -79,7 +89,12 @@ def test_pnl_from_priced_positions_direct_and_pipe() -> None:
     )
 
     direct = cast(pl.DataFrame, pnl_from_priced_positions(today, previous).collect())
-    piped = cast(pl.DataFrame, today.pipe(pnl_from_priced_positions, previous).collect())
+    piped = cast(
+        pl.DataFrame,
+        today.pipe(
+            cast(Callable[..., pl.LazyFrame], pnl_from_priced_positions), previous
+        ).collect(),
+    )
 
     assert direct.select("price_pnl").item() == pytest.approx(2.0)
     assert direct.select("mtm_pnl").item() == pytest.approx(2.0)
@@ -88,7 +103,7 @@ def test_pnl_from_priced_positions_direct_and_pipe() -> None:
 
 
 def test_price_forward_instruments_returns_instrument_price(energy_inputs, energy_market) -> None:
-    prices = price_forward_instruments(cast(pl.LazyFrame, energy_inputs), energy_market)
+    prices = price_forward_instruments(cast(LazyFrame[ForwardTrade], energy_inputs), energy_market)
 
     result = cast(pl.DataFrame, InstrumentPrice.validate(prices, lazy=True).collect())
 

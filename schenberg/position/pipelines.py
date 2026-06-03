@@ -3,7 +3,8 @@ from __future__ import annotations
 import polars as pl
 
 from schenberg.core.pipeline import Pipe
-from schenberg.position.functions import price_forward_instruments, with_prices
+from schenberg.position.functions import with_prices
+from schenberg.pricing.instruments.forward.prices import price_forward_instruments
 
 valuation_pipe = Pipe("valuation")
 
@@ -14,13 +15,8 @@ def forward_prices(forwards, market):
 
 
 @valuation_pipe.stage
-def prices(forward_prices):
-    return forward_prices
-
-
-@valuation_pipe.stage
-def priced_positions(positions, prices):
-    return positions.pipe(with_prices, prices)
+def priced_positions(positions, forward_prices):
+    return positions.pipe(with_prices, forward_prices)
 
 
 @valuation_pipe.stage
