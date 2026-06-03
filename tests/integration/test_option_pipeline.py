@@ -12,9 +12,9 @@ from typing import cast
 import numpy as np
 import polars as pl
 import pytest
-from schenberg.pricing.greeks import GREEK_NAMES
-from schenberg.pricing.greeks.model import generalized_price
 from schenberg.pricing.instruments.option import price_options, price_options_with_greeks
+from schenberg.risk.greeks import GREEK_NAMES
+from schenberg.risk.greeks.model import generalized_price
 
 from .option_data import make_market, make_options
 

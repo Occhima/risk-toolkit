@@ -14,10 +14,10 @@ import polars as pl
 from numpy.typing import NDArray
 
 from schenberg.domain.enums import GreekMethod, OptionKind
-from schenberg.pricing.greeks.analytic import greeks_analytic
-from schenberg.pricing.greeks.autodiff import greeks_autodiff
-from schenberg.pricing.greeks.model import generalized_price
-from schenberg.pricing.greeks.numeric import greeks_numeric
+from schenberg.risk.greeks.analytic import greeks_analytic
+from schenberg.risk.greeks.autodiff import greeks_autodiff
+from schenberg.risk.greeks.model import generalized_price
+from schenberg.risk.greeks.numeric import greeks_numeric
 
 __all__ = [
     "GREEK_NAMES",
@@ -71,16 +71,16 @@ def attach_greeks(
     struct_dtype = pl.Struct({name: pl.Float64 for name in GREEK_NAMES})
 
     def run(s: pl.Series) -> pl.Series:
-        get = lambda f: s.struct.field(f).to_numpy()  # noqa: E731
+        col = {f: s.struct.field(f).to_numpy() for f in fields}
         greeks = compute_greeks(
             method=method,
-            spot=get("spot"),
-            strike=get("strike"),
-            rate=get("rate"),
-            carry=get(carry_col),
-            vol=get("vol"),
-            ttm=get(ttm_col),
-            eta=get("_eta"),
+            spot=col["spot"],
+            strike=col["strike"],
+            rate=col["rate"],
+            carry=col[carry_col],
+            vol=col["vol"],
+            ttm=col[ttm_col],
+            eta=col["_eta"],
         )
         return pl.DataFrame({name: greeks[name] for name in GREEK_NAMES}).to_struct()
 

@@ -11,7 +11,7 @@ import numpy as np
 from autograd import elementwise_grad as egrad
 from numpy.typing import NDArray
 
-from schenberg.pricing.greeks.model import generalized_price
+from schenberg.risk.greeks.model import generalized_price
 
 Greeks = dict[str, NDArray[np.float64]]
 

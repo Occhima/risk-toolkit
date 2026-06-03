@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from schenberg.pricing.greeks import GREEK_NAMES, compute_greeks
-from schenberg.pricing.greeks.analytic import greeks_analytic
+from schenberg.risk.greeks import GREEK_NAMES, compute_greeks
+from schenberg.risk.greeks.analytic import greeks_analytic
 
 # A spread of moneyness, carries and maturities — calls and puts.
 SPOT = np.array([100.0, 100.0, 80.0, 120.0, 100.0, 100.0])
