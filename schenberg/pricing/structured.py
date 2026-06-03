@@ -8,8 +8,12 @@ import pandera.polars as pa
 import polars as pl
 from pandera.typing.polars import LazyFrame
 
+from schenberg.core.columns import cols
 from schenberg.domain.schemas.position import InstrumentPrice
 from schenberg.domain.schemas.structure import StructureLeg
+
+L = cols(StructureLeg)
+PX = cols(InstrumentPrice)
 
 
 @pa.check_types(lazy=True)
@@ -27,17 +31,17 @@ def price_structures(
     """
     priced_components = structure_legs.join(
         component_prices,
-        left_on=["component_instrument_type", "component_instrument_id"],
-        right_on=["instrument_type", "instrument_id"],
+        left_on=[L.component_instrument_type.name, L.component_instrument_id.name],
+        right_on=[PX.instrument_type.name, PX.instrument_id.name],
         how="left",
-    ).with_columns(component_value=pl.col("side") * pl.col("quantity") * pl.col("price"))
+    ).with_columns(component_value=L.side.expr() * L.quantity.expr() * PX.price.expr())
 
     result = (
-        priced_components.group_by("structure_id")
+        priced_components.group_by(L.structure_id.name)
         .agg(price=pl.col("component_value").sum())
         .with_columns(instrument_type=pl.lit(structure_type))
-        .rename({"structure_id": "instrument_id"})
-        .select("instrument_type", "instrument_id", "price")
+        .rename({L.structure_id.name: PX.instrument_id.name})
+        .select(PX.instrument_type.name, PX.instrument_id.name, PX.price.name)
     )
 
     return cast(LazyFrame[InstrumentPrice], result)
