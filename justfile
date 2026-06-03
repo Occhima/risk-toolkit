@@ -18,6 +18,9 @@ test:
 
 check: lint typecheck test
 
+integration:
+    uv run pytest tests/integration -m 'not performance'
+
 docs-build:
     uv run mkdocs build
 
