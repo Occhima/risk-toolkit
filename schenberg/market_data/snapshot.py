@@ -7,7 +7,7 @@ from types import MappingProxyType
 
 import polars as pl
 
-from schenberg.core.market import MarketRequirement
+from schenberg.core.market import MarketDependency
 from schenberg.market_data.sources import MarketSource
 
 
@@ -34,21 +34,8 @@ class MarketSnapshot:
         except KeyError:
             raise ValueError(f"snapshot has no market source {name!r}") from None
 
-    def attach(self, lf: pl.LazyFrame, req: MarketRequirement) -> pl.LazyFrame:
-        src = self.source(req.table).data
-        right = src.select([*req.right_keys, *req.outputs.keys()]).rename(req.outputs)
-        output_columns = set(req.outputs.values())
-        droppable = output_columns - set(req.left_keys)
-        collisions = sorted(droppable & set(lf.collect_schema().names()))
-        if collisions:
-            lf = lf.drop(collisions)
-
-        return lf.join(
-            right,
-            left_on=list(req.left_keys),
-            right_on=list(req.right_keys),
-            how="left",
-        )
+    def attach(self, lf: pl.LazyFrame, req: MarketDependency) -> pl.LazyFrame:
+        return req.attach(lf, self)
 
     def with_source(self, source: MarketSource) -> MarketSnapshot:
         sources = dict(self.sources)

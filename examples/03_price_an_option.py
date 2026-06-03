@@ -3,8 +3,8 @@
 Run with:  uv run python examples/03_price_an_option.py
 
 The market carries an implied-vol *surface* (quoted on a tenor x strike grid);
-``price_options`` interpolates each option's vol off it, then routes the trade
-through the generalized BSM graph. GENERALIZED takes the cost of carry ``b``
+the option graph declares volatility as market data and interpolates it before
+pricing formulas compile. GENERALIZED takes the cost of carry ``b``
 straight from a curve; MERTON derives it as ``b = r - q`` from a dividend curve.
 ``price_options_with_greeks`` then attaches delta/gamma/vega/theta/rho — here via
 autograd, but ``backend="CLOSED_FORM"`` or ``"NUMERIC"`` give the same numbers.
@@ -16,6 +16,7 @@ from __future__ import annotations
 from datetime import date
 
 import polars as pl
+from schenberg.domain.schemas.option import OptionTrade
 from schenberg.market_data.snapshot import MarketSnapshot
 from schenberg.market_data.sources import MarketSource
 from schenberg.pricing.api import price_options_with_greeks
@@ -50,7 +51,7 @@ market = MarketSnapshot.from_sources(
 )
 
 # --- A small book: one generalized and one Merton call + put --------------------
-options = pl.DataFrame(
+options = OptionTrade.from_polars(pl.DataFrame(
     {
         "option_id": ["G-CALL", "G-PUT", "M-CALL", "M-PUT"],
         "instrument_type": ["OPTION"] * 4,
@@ -61,10 +62,8 @@ options = pl.DataFrame(
         "strike": [100.0] * 4,
         "payment_days": [252] * 4,
     }
-).lazy()
+))
 
-result = price_options_with_greeks(options, market, backend="AUTODIFF").select(
-    "option_id", "vol", "price", "delta", "gamma", "vega", "theta", "rho"
-)
+result = price_options_with_greeks(options, market, backend="AUTODIFF")
 with pl.Config(tbl_width_chars=200, float_precision=4):
     print(result.collect())

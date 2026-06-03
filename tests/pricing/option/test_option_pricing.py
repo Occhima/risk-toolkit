@@ -5,10 +5,11 @@ from typing import cast
 
 import polars as pl
 import pytest
+from schenberg.core.graph import ExprGraph
 from schenberg.market_data.sources import MarketSource
 from schenberg.market_data.volatility import VolSurface
-from schenberg.pricing.instruments.option import price_options
-from schenberg.pricing.instruments.option.models import option_router
+from schenberg.pricing.instruments.option import price_options, price_options_with_greeks
+from schenberg.pricing.instruments.option.models import option_price_router, option_router
 
 
 def _priced(option_inputs, option_market) -> pl.DataFrame:
@@ -29,7 +30,7 @@ def test_generalized_call_matches_textbook_black_scholes(option_inputs, option_m
     d1 = (0.10 + 0.5 * 0.20**2) / 0.20
     expected = 100 * _ncdf(d1) - 100 * math.exp(-0.10) * _ncdf(d1 - 0.20)
     assert row["price"].item() == pytest.approx(expected, abs=1e-4)
-    assert row["d1"].item() == pytest.approx(d1, abs=1e-9)
+    assert df.columns == ["option_id", "instrument_type", "price"]
 
 
 def test_put_call_parity_generalized(option_inputs, option_market) -> None:
@@ -77,3 +78,22 @@ def test_pricing_stays_lazy_until_collect(option_inputs, option_market) -> None:
 
 def _ncdf(x: float) -> float:
     return 0.5 * (1.0 + math.erf(x / math.sqrt(2.0)))
+
+
+def test_option_graph_declares_vol_surface() -> None:
+    graph = cast(ExprGraph, option_price_router.cases[0][1])
+    assert "vol" in graph.info(output_profile="price").market_outputs
+
+
+def test_price_options_with_greeks_returns_public_columns(option_inputs, option_market) -> None:
+    df = cast(pl.DataFrame, price_options_with_greeks(option_inputs, option_market).collect())
+    assert df.columns == [
+        "option_id",
+        "instrument_type",
+        "price",
+        "delta",
+        "gamma",
+        "vega",
+        "theta",
+        "rho",
+    ]

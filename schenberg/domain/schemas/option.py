@@ -40,3 +40,58 @@ class OptionGreeks(DataFrameModel):
     vega: float
     theta: float
     rho: float
+
+
+class OptionMarketInput(DataFrameModel):
+    """Option trade after graph-declared market data has been attached."""
+
+    option_id: str
+    instrument_type: str
+    option_model: str
+    option_kind: str
+    id_indexador: int
+    spot: float
+    strike: float
+    payment_days: int
+    vol: float
+
+
+class OptionPricedState(DataFrameModel):
+    """Internal option state consumed by numeric/autodiff Greek engines."""
+
+    option_id: str
+    instrument_type: str
+    option_model: str
+    option_kind: str
+    id_indexador: int
+    spot: float
+    strike: float
+    payment_days: int
+    vol: float
+    rate: float
+    cost_of_carry: float
+    year_fraction: float
+    d1: float
+    d2: float
+    price: float
+
+
+class OptionPrice(DataFrameModel):
+    """Public option price output."""
+
+    option_id: str
+    instrument_type: str
+    price: float
+
+
+class OptionPriceWithGreeks(DataFrameModel):
+    """Public option price output with Greeks."""
+
+    option_id: str
+    instrument_type: str
+    price: float
+    delta: float
+    gamma: float
+    vega: float
+    theta: float
+    rho: float

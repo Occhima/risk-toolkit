@@ -13,7 +13,8 @@ import numpy as np
 import polars as pl
 import pytest
 from schenberg.math.black_scholes import GREEK_NAMES, generalized_price
-from schenberg.pricing.instruments.option import price_options, price_options_with_greeks
+from schenberg.pricing.instruments.option import price_options_with_greeks
+from schenberg.pricing.instruments.option.models import option_greeks_router, option_price_router
 
 from .option_data import make_market, make_options
 
@@ -29,15 +30,21 @@ def _eta(df: pl.DataFrame) -> np.ndarray:
 
 def test_graph_price_reconciles_to_numpy_model(book) -> None:
     options, market = book
-    df = cast(pl.DataFrame, price_options(options, market).collect())
+    state = cast(
+        pl.DataFrame,
+        option_price_router.compute_for(
+            options, market=market, output_profile="priced_state"
+        ).collect(),
+    )
 
     independent = generalized_price(
-        df["spot"].to_numpy(), df["strike"].to_numpy(), df["rate"].to_numpy(),
-        df["cost_of_carry"].to_numpy(), df["vol"].to_numpy(), df["ttm"].to_numpy(), _eta(df),
+        state["spot"].to_numpy(), state["strike"].to_numpy(), state["rate"].to_numpy(),
+        state["cost_of_carry"].to_numpy(), state["vol"].to_numpy(),
+        state["year_fraction"].to_numpy(), _eta(state),
     )  # fmt: skip
     # graph uses an A&S normal CDF, the model an exact erf: agree to ~1e-6.
-    assert np.allclose(df["price"].to_numpy(), independent, atol=1e-5)
-    assert (df["price"].to_numpy() > 0).all()
+    assert np.allclose(state["price"].to_numpy(), independent, atol=1e-5)
+    assert (state["price"].to_numpy() > 0).all()
 
 
 def test_three_greek_backends_reconcile_across_the_book(book) -> None:
@@ -58,10 +65,15 @@ def test_three_greek_backends_reconcile_across_the_book(book) -> None:
 
 def test_book_respects_put_call_parity(book) -> None:
     options, market = book
-    df = cast(pl.DataFrame, price_options(options, market).collect())
+    df = cast(
+        pl.DataFrame,
+        option_price_router.compute_for(
+            options, market=market, output_profile="priced_state"
+        ).collect(),
+    )
     # pair each call with its put (same model, strike, maturity) and check
     # C - P = S e^{(b-r)T} - K e^{-rT}.
-    ttm = pl.col("ttm")
+    ttm = pl.col("year_fraction")
     df = df.with_columns(
         carry_spot=pl.col("spot") * ((pl.col("cost_of_carry") - pl.col("rate")) * ttm).exp(),
         disc_strike=pl.col("strike") * (-pl.col("rate") * ttm).exp(),
@@ -79,7 +91,12 @@ def test_book_respects_put_call_parity(book) -> None:
 
 def test_risk_columns_have_sane_signs(book) -> None:
     options, market = book
-    df = cast(pl.DataFrame, price_options_with_greeks(options, market).collect())
+    df = cast(
+        pl.DataFrame,
+        option_greeks_router.compute_for(
+            options, market=market, output_profile="price_with_greeks"
+        ).collect(),
+    )
     assert (df["gamma"].to_numpy() > 0).all()
     assert (df["vega"].to_numpy() > 0).all()
     calls = df.filter(pl.col("option_kind") == "CALL")

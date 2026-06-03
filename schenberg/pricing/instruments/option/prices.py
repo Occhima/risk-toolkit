@@ -1,52 +1,105 @@
 """Public option-pricing facade.
 
-``price_options`` enriches the trades with an interpolated implied vol off the
-surface, then routes them through the generalized BSM graph.
-``price_options_with_greeks`` adds the sensitivities: the ``CLOSED_FORM`` backend
-is graph-native (the Greeks ride the same graph as the price), while ``NUMERIC``
-and ``AUTODIFF`` bridge the numpy kernels through :class:`GreeksEngine`.
+The facade orchestrates typed contracts and routers only. Volatility is declared
+by the option graph as market data; this module never pulls ``vol_surface`` from
+the snapshot directly.
 """
 
 from __future__ import annotations
 
-import polars as pl
+from typing import cast
 
+import pandera.polars as pa
+from pandera.typing.polars import LazyFrame
+
+from schenberg.core.columns import cols
 from schenberg.domain.enums import GreeksBackend
+from schenberg.domain.schemas.option import (
+    OptionPrice,
+    OptionPricedState,
+    OptionPriceWithGreeks,
+    OptionTrade,
+)
 from schenberg.market_data.snapshot import MarketSnapshot
-from schenberg.market_data.volatility import VolSurface
-from schenberg.pricing.instruments.option.models import option_router
+from schenberg.pricing.instruments.option.models import option_greeks_router, option_price_router
 from schenberg.risk.greeks import GreeksEngine
 
-_DAYS_PER_YEAR = 252.0
+STATE = cols(OptionPricedState)
+PRICE = cols(OptionPrice)
+PRICE_GREEKS = cols(OptionPriceWithGreeks)
 
 
-def _enrich(options: pl.LazyFrame, market: MarketSnapshot) -> pl.LazyFrame:
-    """Add time-to-maturity and the surface-interpolated implied vol."""
-    surface = VolSurface.from_quotes(market.source("vol_surface").data)
-    lf = options.with_columns((pl.col("payment_days") / _DAYS_PER_YEAR).alias("ttm"))
-    return surface.attach(lf, ttm_col="ttm", strike_col="strike", output="vol")
+@pa.check_types(lazy=True)
+def price_options(
+    options: LazyFrame[OptionTrade],
+    market: MarketSnapshot,
+) -> LazyFrame[OptionPrice]:
+    """Price a book of options and return the public price contract."""
+    priced = option_price_router.compute_for(options, market=market, output_profile="price")
+    result = priced.select(
+        PRICE.option_id.name,
+        PRICE.instrument_type.name,
+        PRICE.price.name,
+    )
+    return cast(LazyFrame[OptionPrice], result)
 
 
-def price_options(options: pl.LazyFrame, market: MarketSnapshot) -> pl.LazyFrame:
-    """Price a book of options. One row per option with price, d1, d2."""
-    enriched = _enrich(options, market)
-    return option_router.compute_for(enriched, market=market, output_profile="pricing")
+def _price_option_state(
+    options: LazyFrame[OptionTrade],
+    market: MarketSnapshot,
+) -> LazyFrame[OptionPricedState]:
+    priced = option_price_router.compute_for(
+        options,
+        market=market,
+        output_profile="priced_state",
+    )
+    result = priced.select(
+        STATE.option_id.name,
+        STATE.instrument_type.name,
+        STATE.option_model.name,
+        STATE.option_kind.name,
+        STATE.id_indexador.name,
+        STATE.spot.name,
+        STATE.strike.name,
+        STATE.payment_days.name,
+        STATE.vol.name,
+        STATE.rate.name,
+        STATE.cost_of_carry.name,
+        STATE.year_fraction.name,
+        STATE.d1.name,
+        STATE.d2.name,
+        STATE.price.name,
+    )
+    return cast(LazyFrame[OptionPricedState], result)
 
 
+@pa.check_types(lazy=True)
 def price_options_with_greeks(
-    options: pl.LazyFrame,
+    options: LazyFrame[OptionTrade],
     market: MarketSnapshot,
     *,
     backend: GreeksBackend | str = GreeksBackend.CLOSED_FORM,
-) -> pl.LazyFrame:
-    """Price a book of options and attach delta, gamma, vega, theta, rho.
-
-    ``CLOSED_FORM`` reads the Greeks straight off the pricing graph; the numeric
-    and autodiff backends revalue the numpy model on top of the priced frame.
-    """
+) -> LazyFrame[OptionPriceWithGreeks]:
+    """Price a book of options and attach delta, gamma, vega, theta and rho."""
     backend = GreeksBackend(backend)
     if backend is GreeksBackend.CLOSED_FORM:
-        return option_router.compute_for(
-            _enrich(options, market), market=market, output_profile="greeks"
+        priced = option_greeks_router.compute_for(
+            options,
+            market=market,
+            output_profile="price_with_greeks",
         )
-    return GreeksEngine(backend).attach(price_options(options, market))
+    else:
+        state = _price_option_state(options, market)
+        priced = GreeksEngine(backend).attach(state)
+
+    result = priced.select(
+        PRICE_GREEKS.option_id.name,
+        PRICE_GREEKS.instrument_type.name,
+        PRICE_GREEKS.price.name,
+        PRICE_GREEKS.delta.name,
+        PRICE_GREEKS.gamma.name,
+        PRICE_GREEKS.vega.name,
+        PRICE_GREEKS.theta.name,
+        PRICE_GREEKS.rho.name,
+    )
+    return cast(LazyFrame[OptionPriceWithGreeks], result)
