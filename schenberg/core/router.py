@@ -9,7 +9,7 @@ from typing import Protocol, TypeVar
 import polars as pl
 
 from schenberg.core.columns import ColumnRef, RoutePredicate
-from schenberg.core.market import MarketSnapshot
+from schenberg.market_data.snapshot import MarketSnapshot
 
 
 class Pricer(Protocol):

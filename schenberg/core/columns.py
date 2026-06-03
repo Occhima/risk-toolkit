@@ -41,9 +41,7 @@ class SchemaColumns:
 
     def __getattr__(self, name: str) -> ColumnRef:
         if name not in self._names:
-            raise AttributeError(
-                f"{name!r} is not a declared column in {self._schema.__name__}"
-            )
+            raise AttributeError(f"{name!r} is not a declared column in {self._schema.__name__}")
         return ColumnRef(name)
 
 

@@ -15,8 +15,9 @@ import polars as pl
 from pandera.typing.polars import LazyFrame
 
 from schenberg.core.graph import ExprGraph
-from schenberg.core.market import MarketSnapshot
 from schenberg.domain.schemas import SwapInput
+from schenberg.market_data.shocks import ParallelZeroRateShock
+from schenberg.market_data.snapshot import MarketSnapshot
 from schenberg.pricing.instruments.swap.engine import price_swap
 
 # ---------------------------------------------------------------------------
@@ -143,11 +144,5 @@ def compute_dv01(
 
 
 def bump_curve(market: MarketSnapshot, shift: float) -> MarketSnapshot:
-    """Parallel zero-rate shift. The extension point for bucketed bumps: shift only
-    the rows matching a tenor bucket instead of the whole curve."""
-    return MarketSnapshot(
-        as_of=market.as_of,
-        curves=market.curves.with_columns(pl.col("zero_rate") + shift),
-        fixings=market.fixings,
-        projected_indexes=market.projected_indexes,
-    )
+    """Compatibility wrapper for a parallel zero-rate shift."""
+    return ParallelZeroRateShock(source_name="curves", shift=shift).apply(market)

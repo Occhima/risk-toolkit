@@ -6,20 +6,38 @@ from typing import cast
 
 import polars as pl
 import pytest
-from schenberg.core.market import MarketSnapshot
+from schenberg.market_data.snapshot import MarketSnapshot
+from schenberg.market_data.sources import MarketSource
 from schenberg.pricing.instruments.swap.legs.ipca import ipca_swap_leg_graph
 
 
 def test_ipca_leg_pricing_preserves_formula() -> None:
-    market = MarketSnapshot(
+    market = MarketSnapshot.from_sources(
         as_of=date(2026, 6, 3),
-        curves=pl.DataFrame({"id_indexador": [2], "tenor_days": [252], "zero_rate": [0.05]}).lazy(),
-        fixings=pl.DataFrame(
-            {"id_indexador": [2], "fixing_date": [date(2026, 6, 3)], "fixing_value": [100.0]}
-        ).lazy(),
-        projected_indexes=pl.DataFrame(
-            {"id_indexador": [2], "tenor_days": [252], "projected_index": [106.0]}
-        ).lazy(),
+        sources=[
+            MarketSource(
+                "curves",
+                pl.DataFrame(
+                    {"id_indexador": [2], "tenor_days": [252], "zero_rate": [0.05]}
+                ).lazy(),
+            ),
+            MarketSource(
+                "fixings",
+                pl.DataFrame(
+                    {
+                        "id_indexador": [2],
+                        "fixing_date": [date(2026, 6, 3)],
+                        "fixing_value": [100.0],
+                    }
+                ).lazy(),
+            ),
+            MarketSource(
+                "projected_indexes",
+                pl.DataFrame(
+                    {"id_indexador": [2], "tenor_days": [252], "projected_index": [106.0]}
+                ).lazy(),
+            ),
+        ],
     )
     leg = pl.DataFrame(
         {

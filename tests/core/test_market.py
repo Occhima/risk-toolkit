@@ -5,7 +5,9 @@ from typing import cast
 
 import polars as pl
 from schenberg.core.columns import ColumnSet
-from schenberg.core.market import MarketSnapshot, curve, energy_forward, fixing, fx
+from schenberg.core.market import curve, energy_forward, fixing, fx
+from schenberg.market_data.snapshot import MarketSnapshot
+from schenberg.market_data.sources import MarketSource
 
 
 def test_column_set_exposes_left_and_right_keys() -> None:
@@ -27,11 +29,14 @@ def test_market_requirement_constructors_use_column_sets() -> None:
 
 
 def test_market_snapshot_attach_lazily_joins_and_renames_outputs() -> None:
-    snapshot = MarketSnapshot(
+    snapshot = MarketSnapshot.from_sources(
         as_of=date(2026, 6, 3),
-        curves=pl.DataFrame(
-            {"id_indexador": [1], "tenor_days": [252], "zero_rate": [0.1]}
-        ).lazy(),
+        sources=[
+            MarketSource(
+                "curves",
+                pl.DataFrame({"id_indexador": [1], "tenor_days": [252], "zero_rate": [0.1]}).lazy(),
+            )
+        ],
     )
     trades = pl.DataFrame({"id_indexador": [1], "payment_days": [252]}).lazy()
 
@@ -41,3 +46,10 @@ def test_market_snapshot_attach_lazily_joins_and_renames_outputs() -> None:
     expected_rate = 0.1
     out = cast(pl.DataFrame, attached.collect())
     assert out.select("rate").item() == expected_rate
+
+
+def test_market_snapshot_from_sources_indexes_sources() -> None:
+    source = MarketSource("curves", pl.DataFrame({"x": [1]}).lazy())
+    snapshot = MarketSnapshot.from_sources(as_of=date(2026, 6, 3), sources=[source])
+
+    assert snapshot.source("curves") == source

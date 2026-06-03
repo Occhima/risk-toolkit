@@ -37,3 +37,9 @@ class SwapLegKind(StrEnum):
 class PayReceive(StrEnum):
     PAY = "PAY"
     RECEIVE = "RECEIVE"
+
+
+class AccrualConvention(StrEnum):
+    COMPOUND = "COMPOUND"
+    CONTINUOUS = "CONTINUOUS"
+    LINEAR = "LINEAR"
