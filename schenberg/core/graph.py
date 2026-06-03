@@ -8,7 +8,7 @@ signature. Nothing in this module calls .collect().
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import StrEnum
 from inspect import signature
 from typing import Any, cast
@@ -348,43 +348,10 @@ class ExprGraph:
         }
 
 
-@dataclass(frozen=True, slots=True)
-class Router:
-    """Route heterogeneous rows to different graphs by a discriminator column.
 
-    Exposes the same compute_for signature as ExprGraph, so the two are
-    interchangeable (a case may itself be another Router). The `.case`
-    decorator co-locates registration with the graph definition.
-    """
+def __getattr__(name: str) -> Any:
+    if name == "Router":
+        from schenberg.core.router import Router  # noqa: PLC0415
 
-    route_col: str
-    cases: dict[str, ExprGraph] = field(default_factory=dict)
-
-    def case(self, value: str):
-        """Decorator: register the graph the builder returns under `value` and
-        return the built graph (so the name binds to a graph). Also accepts a
-        graph directly: router.case('CDI')(existing_graph)."""
-
-        def register(builder):
-            graph = builder if isinstance(builder, ExprGraph) else builder()
-            self.cases[value] = graph
-            return graph
-
-        return register
-
-    def compute_for(
-        self,
-        lf: pl.LazyFrame,
-        *,
-        market: MarketSnapshot | None = None,
-        output_profile: str = "pricing",
-    ) -> pl.LazyFrame:
-        parts = [
-            graph.compute_for(
-                lf.filter(pl.col(self.route_col) == value),
-                market=market,
-                output_profile=output_profile,
-            )
-            for value, graph in self.cases.items()
-        ]
-        return pl.concat(parts, how="diagonal_relaxed")
+        return Router
+    raise AttributeError(name)

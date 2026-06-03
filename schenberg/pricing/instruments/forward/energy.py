@@ -1,4 +1,4 @@
-"""Energy forward pricing built on the generic forward valuation backbone."""
+"""Energy forward pricing for already-normalized delivery-period rows."""
 
 from __future__ import annotations
 
@@ -8,12 +8,29 @@ import pandera.polars as pa
 import polars as pl
 from pandera.typing.polars import LazyFrame
 
+from schenberg.core.columns import cols
 from schenberg.core.graph import ExprGraph
 from schenberg.core.market import MarketSnapshot, curve, energy_forward, fx
-from schenberg.domain.schemas import EnergyForward, EnergyForwardOutput, ForwardPricing
+from schenberg.domain.enums import BuySell, ForwardFamily, InstrumentType, SettlementType
+from schenberg.domain.schemas import (
+    EnergyForwardLeg,
+    EnergyForwardOutput,
+    ForwardPricing,
+    ForwardTrade,
+)
 from schenberg.pricing.instruments.forward.generic import forward_valuation_graph
+from schenberg.pricing.instruments.forward.router import forward_router
+
+F = cols(ForwardTrade)
+E = cols(EnergyForwardLeg)
+P = cols(ForwardPricing)
 
 energy_cashflow_graph = ExprGraph("energy_forward_cashflow")
+
+
+@energy_cashflow_graph.node(tags=("energy", "cashflow"))
+def pay_receive(buy_sell: pl.Expr) -> pl.Expr:
+    return pl.when(buy_sell == BuySell.BUY.value).then(1.0).otherwise(-1.0)
 
 
 @energy_cashflow_graph.node(tags=("energy", "cashflow"))
@@ -26,39 +43,41 @@ def future_value(
     return pay_receive * quantity * (forward_price - strike)
 
 
-energy_forward_graph = (
-    ExprGraph.compose("energy_forward", forward_valuation_graph, energy_cashflow_graph)
-    .with_market(
-        energy_forward(),  # supplies forward_price and payment_days from the delivery-period curve
-        curve("zero_rate"),
-        fx(),
-    )
-    .with_outputs("pricing", ForwardPricing)
+@forward_router.register(
+    F.instrument_type == InstrumentType.FORWARD.value,
+    F.forward_family == ForwardFamily.ENERGY.value,
+    F.settlement_type == SettlementType.PHYSICAL.value,
 )
-
-
-def explode_delivery(contracts: pl.LazyFrame) -> pl.LazyFrame:
-    """Explode a block contract into one row per delivery period."""
+def energy_forward_graph() -> ExprGraph:
     return (
-        contracts.explode("delivery_periods")
-        .rename({"delivery_periods": "delivery_period"})
-        .with_columns(
-            pl.col("delivery_period").cast(pl.Utf8),
-            pay_receive=pl.when(pl.col("buy_sell") == "BUY").then(1.0).otherwise(-1.0),
+        ExprGraph.compose(
+            "energy_forward",
+            forward_valuation_graph,
+            energy_cashflow_graph,
         )
+        .with_market(
+            energy_forward(),
+            curve("zero_rate"),
+            fx(),
+        )
+        .with_outputs("pricing", ForwardPricing)
     )
 
 
 @pa.check_types(lazy=True)
 def price_energy_forward(
-    contracts: LazyFrame[EnergyForward],
+    legs: LazyFrame[EnergyForwardLeg],
     market: MarketSnapshot,
 ) -> LazyFrame[EnergyForwardOutput]:
-    """Price energy forwards and aggregate delivery-period rows by contract."""
-    legs = explode_delivery(contracts)
-    priced = energy_forward_graph.compute_for(legs, market=market, output_profile="pricing")
-    result = priced.group_by("contract_id").agg(
-        mtm_local=pl.col("present_value").sum(),
-        mtm=pl.col("value").sum(),
+    priced = energy_forward_graph.compute_for(
+        legs,
+        market=market,
+        output_profile="pricing",
     )
+
+    result = priced.group_by(E.contract_id.name).agg(
+        mtm_local=P.present_value.expr().sum(),
+        mtm=P.value.expr().sum(),
+    )
+
     return cast(LazyFrame[EnergyForwardOutput], result)

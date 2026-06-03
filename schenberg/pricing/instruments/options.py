@@ -11,7 +11,9 @@ import math
 
 import polars as pl
 
-from schenberg.core.graph import ExprGraph, Router
+from schenberg.core.columns import ColumnRef
+from schenberg.core.graph import ExprGraph
+from schenberg.core.router import Router
 
 
 def norm_cdf(x: pl.Expr) -> pl.Expr:
@@ -63,4 +65,6 @@ bs_put_graph = ExprGraph.compose("bs_put", bs_vanilla_graph).with_outputs(
     "pricing", d1="d1", d2="d2", price="put_price"
 )
 
-bs_router = Router("option_kind", {"CALL": bs_call_graph, "PUT": bs_put_graph})
+bs_router = Router.by(ColumnRef("option_kind"))
+bs_router.register(ColumnRef("option_kind") == "CALL")(lambda: bs_call_graph)
+bs_router.register(ColumnRef("option_kind") == "PUT")(lambda: bs_put_graph)
