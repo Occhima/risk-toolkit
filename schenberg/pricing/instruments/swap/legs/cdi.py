@@ -4,15 +4,10 @@ from __future__ import annotations
 
 import polars as pl
 
-from schenberg.core.columns import cols
 from schenberg.core.graph import ExprGraph
 from schenberg.core.market import curve
 from schenberg.domain.enums import SwapLegKind
-from schenberg.domain.schemas import LegPricing, SwapLegInput
-from schenberg.pricing.instruments.swap.generic import swap_leg_valuation_graph
-from schenberg.pricing.instruments.swap.router import swap_leg_router
-
-L = cols(SwapLegInput)
+from schenberg.pricing.instruments.swap.legs.registry import register_leg
 
 cdi_cashflow_graph = ExprGraph("cdi_cashflow")
 
@@ -27,10 +22,10 @@ def cashflow_amount(notional: pl.Expr, projected_rate: pl.Expr, accrual: pl.Expr
     return notional * projected_rate * accrual
 
 
-@swap_leg_router.register(L.leg_kind == SwapLegKind.CDI.value)
-def cdi_swap_leg_graph() -> ExprGraph:
-    return (
-        ExprGraph.compose("cdi_swap_leg", swap_leg_valuation_graph, cdi_cashflow_graph)
-        .with_market(curve("zero_rate", "forward_rate"))
-        .with_outputs("pricing", LegPricing)
-    )
+# CDI projects off the forward_rate column carried on the discount curve.
+cdi_swap_leg_graph = register_leg(
+    SwapLegKind.CDI.value,
+    name="cdi_swap_leg",
+    cashflow=cdi_cashflow_graph,
+    market=[curve("zero_rate", "forward_rate")],
+)

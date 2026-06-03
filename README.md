@@ -71,6 +71,9 @@ A full, runnable version of this is [`examples/01_price_a_swap.py`](examples/01_
 
 - A reusable **formula DAG core** (`ExprGraph`) and a **stage pipeline** (`Pipe`).
 - **Swap pricing** for CDI, IPCA, and CPI legs.
+- **Option pricing** under generalized Black-Scholes-Merton (GENERALIZED and
+  MERTON), priced off an interpolated **volatility surface**, with **Greeks
+  three ways** — closed-form, finite-difference, and autograd — that reconcile.
 - A **generic forward backbone** (`forward_price - strike → future_value →
   present_value → value`) and an **energy forward** composed from it.
 - **Portfolio** value, PnL, and DV01 helpers.
