@@ -6,6 +6,7 @@ import polars as pl
 import pytest
 from schenberg.market_data.snapshot import MarketSnapshot
 from schenberg.market_data.sources import MarketSource
+from schenberg.pricing.instruments.forward.energy import with_fixing_date
 
 
 @pytest.fixture
@@ -49,23 +50,37 @@ def swap_market() -> MarketSnapshot:
 
 
 @pytest.fixture
-def swap_inputs() -> pl.LazyFrame:
+def swap_legs() -> pl.LazyFrame:
+    """One CDI-vs-IPCA swap as normalized legs: receive CDI, pay IPCA+coupon."""
+    common = {
+        "notional": 1_000_000.0,
+        "payment_days": 252,
+        "accrual": 1.0,
+        "base_date": date(2026, 6, 3),
+        "fixed_rate": None,
+        "cashflow_amount": None,
+    }
     return pl.DataFrame(
-        {
-            "swap_id": ["SWP-1"],
-            "notional": [1_000_000.0],
-            "id_indexador_ativo": [1],
-            "id_indexador_passivo": [2],
-            "indexador_kind_ativo": ["CDI"],
-            "indexador_kind_passivo": ["IPCA"],
-            "payment_days": [252],
-            "accrual": [1.0],
-            "base_date": [date(2026, 6, 3)],
-            "fixed_rate_ativo": [None],
-            "fixed_rate_passivo": [None],
-            "real_coupon_ativo": [None],
-            "real_coupon_passivo": [0.02],
-        }
+        [
+            {
+                "swap_id": "SWP-1",
+                "leg_id": "ativo",
+                "leg_kind": "CDI",
+                "pay_receive": "RECEIVE",
+                "id_indexador": 1,
+                "real_coupon": None,
+                **common,
+            },
+            {
+                "swap_id": "SWP-1",
+                "leg_id": "passivo",
+                "leg_kind": "IPCA",
+                "pay_receive": "PAY",
+                "id_indexador": 2,
+                "real_coupon": 0.02,
+                **common,
+            },
+        ]
     ).lazy()
 
 
@@ -106,7 +121,7 @@ def energy_market() -> MarketSnapshot:
 
 @pytest.fixture
 def energy_inputs() -> pl.LazyFrame:
-    return pl.DataFrame(
+    legs = pl.DataFrame(
         {
             "instrument_id": ["ENG-1", "ENG-1"],
             "instrument_type": ["FORWARD", "FORWARD"],
@@ -120,3 +135,5 @@ def energy_inputs() -> pl.LazyFrame:
             "currency": ["BRL", "BRL"],
         }
     ).lazy()
+    # The fixing date is part of the contract; build it with the utility.
+    return with_fixing_date(legs)

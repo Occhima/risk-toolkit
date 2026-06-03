@@ -51,18 +51,20 @@ market = MarketSnapshot.from_sources(
 )
 
 # --- A small book: one generalized and one Merton call + put --------------------
-options = OptionTrade.from_polars(pl.DataFrame(
-    {
-        "option_id": ["G-CALL", "G-PUT", "M-CALL", "M-PUT"],
-        "instrument_type": ["OPTION"] * 4,
-        "option_model": ["GENERALIZED", "GENERALIZED", "MERTON", "MERTON"],
-        "option_kind": ["CALL", "PUT", "CALL", "PUT"],
-        "id_indexador": [1, 1, 1, 1],
-        "spot": [100.0] * 4,
-        "strike": [100.0] * 4,
-        "payment_days": [252] * 4,
-    }
-))
+options = OptionTrade.from_polars(
+    pl.DataFrame(
+        {
+            "option_id": ["G-CALL", "G-PUT", "M-CALL", "M-PUT"],
+            "instrument_type": ["OPTION"] * 4,
+            "option_model": ["GENERALIZED", "GENERALIZED", "MERTON", "MERTON"],
+            "option_kind": ["CALL", "PUT", "CALL", "PUT"],
+            "id_indexador": [1, 1, 1, 1],
+            "spot": [100.0] * 4,
+            "strike": [100.0] * 4,
+            "payment_days": [252] * 4,
+        }
+    )
+)
 
 result = price_options_with_greeks(options, market, backend="AUTODIFF")
 with pl.Config(tbl_width_chars=200, float_precision=4):

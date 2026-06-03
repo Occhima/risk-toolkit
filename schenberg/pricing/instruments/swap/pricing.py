@@ -1,4 +1,9 @@
-"""Public swap pricing orchestration and aggregation."""
+"""Public swap pricing orchestration and aggregation.
+
+A swap *is* its legs. Callers pass normalized leg rows (``SwapLegInput``)
+directly — there is no wide one-row-per-swap contract and no reshaping step:
+each leg is priced by its kind and the signed PVs are summed per ``swap_id``.
+"""
 
 from __future__ import annotations
 
@@ -9,8 +14,7 @@ import polars as pl
 from pandera.typing.polars import LazyFrame
 
 from schenberg.core.columns import cols
-from schenberg.domain.enums import PayReceive
-from schenberg.domain.schemas import LegPricing, SwapInput, SwapLegInput, SwapOutput
+from schenberg.domain.schemas import LegPricing, SwapLegInput, SwapOutput
 from schenberg.market_data.snapshot import MarketSnapshot
 
 # Import side-effect registrations explicitly.
@@ -19,29 +23,6 @@ from schenberg.pricing.instruments.swap.router import swap_leg_router
 
 L = cols(SwapLegInput)
 P = cols(LegPricing)
-
-_COMMON = ["swap_id", "notional", "payment_days", "accrual", "base_date"]
-
-
-def swap_to_legs(swaps: pl.LazyFrame) -> pl.LazyFrame:
-    """Wide swap rows -> normalized long leg rows."""
-
-    def leg(side: str, pay_receive: PayReceive) -> pl.LazyFrame:
-        return swaps.select(
-            *_COMMON,
-            pl.lit(side).alias(L.leg_id.name),
-            pl.lit(pay_receive.value).alias(L.pay_receive.name),
-            pl.col(f"id_indexador_{side}").alias(L.id_indexador.name),
-            pl.col(f"indexador_kind_{side}").alias(L.leg_kind.name),
-            pl.col(f"fixed_rate_{side}").alias(L.fixed_rate.name),
-            pl.col(f"real_coupon_{side}").alias(L.real_coupon.name),
-            pl.lit(None, dtype=pl.Float64).alias(L.cashflow_amount.name),
-        )
-
-    return pl.concat(
-        [leg("ativo", PayReceive.RECEIVE), leg("passivo", PayReceive.PAY)],
-        how="vertical",
-    )
 
 
 def aggregate_swap_pv(priced_legs: pl.LazyFrame) -> pl.LazyFrame:
@@ -59,15 +40,14 @@ def aggregate_swap_pv(priced_legs: pl.LazyFrame) -> pl.LazyFrame:
 
 @pa.check_types(lazy=True)
 def price_swaps(
-    swaps: LazyFrame[SwapInput], market: MarketSnapshot, *, output_profile: str = "pricing"
+    legs: LazyFrame[SwapLegInput], market: MarketSnapshot, *, output_profile: str = "pricing"
 ) -> LazyFrame[SwapOutput]:
-    legs_lf = swap_to_legs(swaps)
-    priced = swap_leg_router.compute_for(legs_lf, market=market, output_profile=output_profile)
+    priced = swap_leg_router.compute_for(legs, market=market, output_profile=output_profile)
     return cast(LazyFrame[SwapOutput], aggregate_swap_pv(priced))
 
 
 @pa.check_types(lazy=True)
 def price_swap(
-    swaps: LazyFrame[SwapInput], market: MarketSnapshot, *, output_profile: str = "pricing"
+    legs: LazyFrame[SwapLegInput], market: MarketSnapshot, *, output_profile: str = "pricing"
 ) -> LazyFrame[SwapOutput]:
-    return price_swaps(swaps, market, output_profile=output_profile)
+    return price_swaps(legs, market, output_profile=output_profile)

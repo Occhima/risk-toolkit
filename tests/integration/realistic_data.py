@@ -14,7 +14,7 @@ from typing import cast
 
 import polars as pl
 from pandera.typing.polars import LazyFrame
-from schenberg.domain.schemas import SwapInput
+from schenberg.domain.schemas import SwapLegInput
 from schenberg.market_data.snapshot import MarketSnapshot
 from schenberg.market_data.sources import MarketSource
 
@@ -68,48 +68,37 @@ def make_market(*, zero_rate: float = 0.10, slope: float = 0.005) -> MarketSnaps
     )
 
 
-def make_swaps(n: int) -> LazyFrame[SwapInput]:
-    """``n`` CDI-vs-IPCA swaps, deterministically spread across tenors/notionals."""
+def make_swap_legs(n: int) -> LazyFrame[SwapLegInput]:
+    """``n`` CDI-vs-IPCA swaps as normalized legs (receive CDI / pay IPCA),
+    two rows per swap, deterministically spread across tenors/notionals."""
+    swap_ids = [f"SWP-{i:06d}" for i in range(n)]
     tenors = list(islice(cycle(TENORS), n))
     notionals = list(islice(cycle(NOTIONALS), n))
-    return cast(
-        LazyFrame[SwapInput],
-        pl.DataFrame(
-            {
-                "swap_id": [f"SWP-{i:06d}" for i in range(n)],
-                "notional": notionals,
-                "id_indexador_ativo": [CDI] * n,
-                "id_indexador_passivo": [IPCA] * n,
-                "indexador_kind_ativo": ["CDI"] * n,
-                "indexador_kind_passivo": ["IPCA"] * n,
-                "payment_days": tenors,
-                "accrual": [t / 252.0 for t in tenors],
-                "base_date": [AS_OF] * n,
-                "fixed_rate_ativo": [None] * n,
-                "fixed_rate_passivo": [None] * n,
-                "real_coupon_ativo": [None] * n,
-                "real_coupon_passivo": [0.02] * n,
-            }
-        ).lazy(),
-    )
+    accruals = [t / 252.0 for t in tenors]
 
-
-def make_positions(swap_ids: list[str]) -> pl.LazyFrame:
-    """Spread the catalog across three books, with a couple of swaps double-booked
-    (so the valuer's price-once-then-join is exercised)."""
-    books = cycle(["Rates", "Inflation", "Macro"])
-    quantities = cycle([1.0, 2.0, 0.5, 3.0])
-    rows = [
-        {
-            "position_id": f"POS-{i:04d}",
-            "book": book,
-            "swap_id": swap_id,
-            "quantity": qty,
+    def side(
+        leg_id: str,
+        pay_receive: str,
+        indexer: int,
+        kind: str,
+        real_coupon: float | None,
+    ) -> dict[str, list]:
+        return {
+            "swap_id": swap_ids,
+            "leg_id": [leg_id] * n,
+            "leg_kind": [kind] * n,
+            "pay_receive": [pay_receive] * n,
+            "notional": notionals,
+            "id_indexador": [indexer] * n,
+            "payment_days": tenors,
+            "accrual": accruals,
+            "base_date": [AS_OF] * n,
+            "fixed_rate": [None] * n,
+            "real_coupon": [real_coupon] * n,
+            "cashflow_amount": [None] * n,
         }
-        for i, (swap_id, book, qty) in enumerate(zip(swap_ids, books, quantities, strict=False))
-    ]
-    # double-book the first swap into a second book to test aggregation
-    rows.append(
-        {"position_id": "POS-DUP", "book": "Macro", "swap_id": swap_ids[0], "quantity": 1.5}
-    )
-    return pl.DataFrame(rows).lazy()
+
+    floats = {"fixed_rate": pl.Float64, "real_coupon": pl.Float64, "cashflow_amount": pl.Float64}
+    ativo = pl.DataFrame(side("ativo", "RECEIVE", CDI, "CDI", None), schema_overrides=floats)
+    passivo = pl.DataFrame(side("passivo", "PAY", IPCA, "IPCA", 0.02), schema_overrides=floats)
+    return cast(LazyFrame[SwapLegInput], pl.concat([ativo, passivo]).lazy())

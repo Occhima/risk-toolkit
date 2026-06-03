@@ -19,7 +19,7 @@ from pandera.typing.polars import LazyFrame
 from schenberg.domain.schemas import EnergyForwardLeg
 from schenberg.market_data.snapshot import MarketSnapshot
 from schenberg.market_data.sources import MarketSource
-from schenberg.pricing.instruments.forward.energy import price_energy_forward
+from schenberg.pricing.instruments.forward.energy import price_energy_forward, with_fixing_date
 
 market = MarketSnapshot.from_sources(
     as_of=date(2026, 6, 3),
@@ -50,23 +50,28 @@ market = MarketSnapshot.from_sources(
     ],
 )
 
-# One instrument (ENG-1) delivering across two monthly periods -> two legs.
+# One instrument (ENG-1) delivering across two monthly periods -> two legs. The
+# fixing_date is part of the EnergyForwardLeg contract; if you don't already have
+# it, with_fixing_date builds it (6th ANBIMA business day of the month after
+# delivery).
 legs = cast(
     LazyFrame[EnergyForwardLeg],
-    pl.DataFrame(
-        {
-            "instrument_id": ["ENG-1", "ENG-1"],
-            "instrument_type": ["FORWARD", "FORWARD"],
-            "forward_family": ["ENERGY", "ENERGY"],
-            "settlement_type": ["PHYSICAL", "PHYSICAL"],
-            "submarket": ["SE", "SE"],
-            "delivery_period": ["2026-07", "2026-08"],
-            "id_indexador": [1, 1],
-            "payment_days": [30, 60],
-            "strike": [100.0, 100.0],
-            "currency": ["BRL", "BRL"],
-        }
-    ).lazy(),
+    with_fixing_date(
+        pl.DataFrame(
+            {
+                "instrument_id": ["ENG-1", "ENG-1"],
+                "instrument_type": ["FORWARD", "FORWARD"],
+                "forward_family": ["ENERGY", "ENERGY"],
+                "settlement_type": ["PHYSICAL", "PHYSICAL"],
+                "submarket": ["SE", "SE"],
+                "delivery_period": ["2026-07", "2026-08"],
+                "id_indexador": [1, 1],
+                "payment_days": [30, 60],
+                "strike": [100.0, 100.0],
+                "currency": ["BRL", "BRL"],
+            }
+        ).lazy()
+    ),
 )
 
 print(price_energy_forward(legs, market).collect())

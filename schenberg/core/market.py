@@ -63,6 +63,7 @@ class MarketRequirement:
             how="left",
         )
 
+
 # Requirement helpers for the swap legs. New market-data specs live under
 # schenberg.market_data.* and should be preferred for new instruments.
 def curve(
