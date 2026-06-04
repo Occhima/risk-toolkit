@@ -76,4 +76,4 @@ def price_energy_forward(
     market: MarketSnapshot,
 ) -> LazyFrame[InstrumentPrice]:
     priced = energy_forward_graph.compute(legs, market=market, view="pricing")
-    return aggregate_forward_prices(priced, id_col=E.instrument_id.name)
+    return aggregate_forward_prices(priced)

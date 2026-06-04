@@ -14,4 +14,4 @@ from schenberg.pricing.instruments.swap.generic import base_swap_leg_graph
 
 L = cols(SwapLegInput)
 
-swap_leg_router = Router.on(L.leg_kind).default(base_swap_leg_graph)
+swap_leg_router = Router.on(L.leg_kind, name="swap_leg_router").default(base_swap_leg_graph)

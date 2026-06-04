@@ -1,8 +1,9 @@
-"""Public swap pricing orchestration and aggregation.
+"""Public swap pricing orchestration.
 
-A swap *is* its legs. Callers pass normalized leg rows (``SwapLegInput``)
-directly — there is no wide one-row-per-swap contract and no reshaping step:
-each leg is priced by its kind and the signed PVs are summed per ``swap_id``.
+A swap *is* its legs. Callers pass normalized leg rows (``SwapLegInput``) directly
+— there is no wide one-row-per-swap contract. Pricing is delegated entirely to
+:data:`swap_structure`: pure leg pricing, then exposure (``leg_weight``), then a
+fold by ``swap_id``. The position direction is never in the pricing graph.
 """
 
 from __future__ import annotations
@@ -13,41 +14,36 @@ import pandera.polars as pa
 import polars as pl
 from pandera.typing.polars import LazyFrame
 
-from schenberg.core.columns import cols
-from schenberg.domain.schemas import LegPricing, SwapLegInput, SwapOutput
+from schenberg.domain.schemas import SwapLegInput, SwapOutput
 from schenberg.market_data.snapshot import MarketSnapshot
-
-# Import side-effect registrations explicitly.
-from schenberg.pricing.instruments.swap import legs as _legs  # noqa: F401
-from schenberg.pricing.instruments.swap.router import swap_leg_router
-
-L = cols(SwapLegInput)
-P = cols(LegPricing)
-
-
-def aggregate_swap_pv(priced_legs: pl.LazyFrame) -> pl.LazyFrame:
-    """Leg-level PVs -> swap-level NPV.
-
-    ``pv`` already carries pay/receive sign, so NPV is a plain sum and per-leg
-    columns are signed contributions.
-    """
-    return priced_legs.group_by(L.swap_id.name).agg(
-        npv=P.pv.expr().sum(),
-        ativo_pv=P.pv.expr().filter(pl.col(L.leg_id.name) == "ativo").sum(),
-        passivo_pv=P.pv.expr().filter(pl.col(L.leg_id.name) == "passivo").sum(),
-    )
+from schenberg.pricing.instruments.swap.structure import swap_structure
 
 
 @pa.check_types(lazy=True)
 def price_swaps(
-    legs: LazyFrame[SwapLegInput], market: MarketSnapshot, *, view: str = "pricing"
+    legs: LazyFrame[SwapLegInput],
+    market: MarketSnapshot,
 ) -> LazyFrame[SwapOutput]:
-    priced = swap_leg_router.compute(legs, market=market, view=view)
-    return cast(LazyFrame[SwapOutput], aggregate_swap_pv(priced))
+    """Price a book of swap legs into one NPV row per ``swap_id``."""
+    return cast(LazyFrame[SwapOutput], swap_structure.compute(legs, market=market))
 
 
 @pa.check_types(lazy=True)
 def price_swap(
-    legs: LazyFrame[SwapLegInput], market: MarketSnapshot, *, view: str = "pricing"
+    legs: LazyFrame[SwapLegInput],
+    market: MarketSnapshot,
 ) -> LazyFrame[SwapOutput]:
-    return price_swaps(legs, market, view=view)
+    """Alias for :func:`price_swaps` (reads well for a single swap)."""
+    return price_swaps(legs, market)
+
+
+def stage_swaps(legs: pl.LazyFrame, market: MarketSnapshot) -> pl.LazyFrame:
+    """Debug helper: per-leg pure pricing *plus* exposure (``weighted_pv``),
+    before the fold. Stays lazy."""
+    return swap_structure.stage(legs, market=market)
+
+
+def swap_components(legs: pl.LazyFrame, market: MarketSnapshot) -> pl.LazyFrame:
+    """Debug helper: pure per-leg component pricing, before exposure or fold.
+    Stays lazy."""
+    return swap_structure.components_frame(legs, market=market)

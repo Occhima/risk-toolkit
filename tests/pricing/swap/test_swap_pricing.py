@@ -7,9 +7,7 @@ import pytest
 from schenberg.pricing.api import price_swap
 
 
-def test_price_swap_returns_one_row_per_swap_with_existing_sign_convention(
-    swap_legs, swap_market
-) -> None:
+def test_price_swap_returns_one_row_per_swap(swap_legs, swap_market) -> None:
     result = cast(pl.DataFrame, price_swap(swap_legs, swap_market).collect())
 
     assert result.select("swap_id").item() == "SWP-1"

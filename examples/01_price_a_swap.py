@@ -3,10 +3,11 @@
 Run with:  uv run python examples/01_price_a_swap.py
 
 A swap *is* its legs. You book the legs directly (the contract is ``SwapLegInput``,
-not a wide row that needs reshaping); ``price_swap`` routes each leg to the right
-pricer (CDI / IPCA / fixed) by ``leg_kind``, attaches the market curves the leg
-declares, and aggregates the signed leg PVs back to a swap NPV. Everything stays
-lazy until ``.collect()``.
+not a wide row that needs reshaping); the swap ``Structure`` routes each leg to its
+pure pricer (CDI / IPCA / fixed) by ``leg_kind``, applies the position direction
+(``leg_weight``) as exposure, and folds the weighted PVs back to a swap NPV. The
+pricing graph itself never knows pay/receive. Everything stays lazy until
+``.collect()``.
 """
 
 from __future__ import annotations
@@ -68,7 +69,8 @@ legs = cast(
                 "swap_id": "SWP-1",
                 "leg_id": "ativo",
                 "leg_kind": "CDI",
-                "pay_receive": "RECEIVE",
+                "leg_role": "ativo",
+                "leg_weight": 1.0,  # receive CDI
                 "id_indexador": 1,
                 "real_coupon": None,
                 **_common,
@@ -77,7 +79,8 @@ legs = cast(
                 "swap_id": "SWP-1",
                 "leg_id": "passivo",
                 "leg_kind": "IPCA",
-                "pay_receive": "PAY",
+                "leg_role": "passivo",
+                "leg_weight": -1.0,  # pay IPCA+coupon
                 "id_indexador": 2,
                 "real_coupon": 0.02,
                 **_common,

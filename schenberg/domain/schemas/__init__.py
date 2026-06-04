@@ -12,7 +12,12 @@ from schenberg.domain.schemas.market_data import (
 )
 from schenberg.domain.schemas.position import InstrumentPrice, Position, PricedPosition
 from schenberg.domain.schemas.structure import StructureLeg
-from schenberg.domain.schemas.swap import LegPricing, SwapLegInput, SwapOutput
+from schenberg.domain.schemas.swap import (
+    LegPricing,
+    SwapLegInput,
+    SwapLegStage,
+    SwapOutput,
+)
 
 __all__ = [
     "DataFrameModel",
@@ -29,5 +34,6 @@ __all__ = [
     "PricedPosition",
     "StructureLeg",
     "SwapLegInput",
+    "SwapLegStage",
     "SwapOutput",
 ]

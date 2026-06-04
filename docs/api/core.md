@@ -18,6 +18,28 @@ The primitives that power all pricing in Schenberg.
 
 ::: schenberg.core.router.Router
 
+## Structure
+
+::: schenberg.core.structure.Structure
+
+## Fold
+
+::: schenberg.core.fold.Fold
+
+::: schenberg.core.fold.sum_
+
+::: schenberg.core.fold.first_
+
+::: schenberg.core.fold.count_
+
+::: schenberg.core.fold.lit_
+
+## DiagnosticReport
+
+::: schenberg.core.diagnostics.DiagnosticReport
+
+::: schenberg.core.diagnostics.Diagnostic
+
 ## MarketRead
 
 ::: schenberg.core.market.MarketRead

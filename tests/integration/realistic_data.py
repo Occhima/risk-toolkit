@@ -78,7 +78,7 @@ def make_swap_legs(n: int) -> LazyFrame[SwapLegInput]:
 
     def side(
         leg_id: str,
-        pay_receive: str,
+        leg_weight: float,
         indexer: int,
         kind: str,
         real_coupon: float | None,
@@ -87,7 +87,8 @@ def make_swap_legs(n: int) -> LazyFrame[SwapLegInput]:
             "swap_id": swap_ids,
             "leg_id": [leg_id] * n,
             "leg_kind": [kind] * n,
-            "pay_receive": [pay_receive] * n,
+            "leg_role": [leg_id] * n,
+            "leg_weight": [leg_weight] * n,
             "notional": notionals,
             "id_indexador": [indexer] * n,
             "payment_days": tenors,
@@ -99,6 +100,6 @@ def make_swap_legs(n: int) -> LazyFrame[SwapLegInput]:
         }
 
     floats = {"fixed_rate": pl.Float64, "real_coupon": pl.Float64, "cashflow_amount": pl.Float64}
-    ativo = pl.DataFrame(side("ativo", "RECEIVE", CDI, "CDI", None), schema_overrides=floats)
-    passivo = pl.DataFrame(side("passivo", "PAY", IPCA, "IPCA", 0.02), schema_overrides=floats)
+    ativo = pl.DataFrame(side("ativo", 1.0, CDI, "CDI", None), schema_overrides=floats)
+    passivo = pl.DataFrame(side("passivo", -1.0, IPCA, "IPCA", 0.02), schema_overrides=floats)
     return cast(LazyFrame[SwapLegInput], pl.concat([ativo, passivo]).lazy())

@@ -12,9 +12,12 @@ the edge.
 | Block | What it is | When you reach for it |
 |-------|------------|-----------------------|
 | **`Term`** | One value in a graph: an input, a market read, a literal, or a formula. | The atom everything else is made of. |
-| **`FormulaGraph`** | An open, typed, applicative graph of terms that compiles to one nested `pl.Expr`. | Math where the shape doesn't change: discounting, payoffs, factors. |
-| **`MarketSnapshot`** | The Reader *environment*: named market sources supplied at compute time. | Pulling curves/fixings/FX/vol onto trade rows by key. |
+| **`FormulaGraph`** | An open, typed, applicative graph of terms that compiles to one nested `pl.Expr`. | Pure, row-local math where the shape doesn't change: discounting, payoffs, factors. |
+| **`MarketSnapshot`** | The Reader *environment*: named market sources supplied at compute time. | Looking up curves/fixings/FX/vol onto trade rows. |
 | **`Router`** | A contract-oriented case split over computations (ArrowChoice). | The *formula* differs per row (instrument family, option kind, ...). |
+| **`Structure`** | Component pricing → exposure/weighting → `Fold`. | Structured instruments (a swap *is* its legs): the layer that owns position direction. |
+| **`Fold`** | Monoidal aggregation of component rows into instrument/portfolio rows. | "Group by id and combine values" — sums, weighted sums, filtered sums. |
+| **`Shock` / `MarketPath`** | An endomorphism `MarketSnapshot → MarketSnapshot`, focused by a lens-lite path. | Scenarios and risk: bump a curve/vol, reprice, compose stresses. |
 | **`Workflow`** | A DAG of *stages* returning LazyFrames. | Steps that change shape: joins, group-bys, repricing under a bumped market. |
 
 ## 1. Terms
@@ -79,7 +82,7 @@ view="price")` then compiles the view into one lazy `with_columns`. A bare `Term
 default (`d=t.payment_days`) is accepted as shorthand, but `uses(...)` is the
 canonical style because it keeps type hints clean.
 
-## 3. Market data is the Reader environment
+## 3. Market data is the Reader environment — and it is lookup-oriented
 
 Market reads are declared *inside the graph* as terms with `g.market(...)`; the
 `MarketSnapshot` supplies *where they come from* at compute time — the Reader
@@ -91,11 +94,17 @@ m = g.market(
 )
 ```
 
+A market read is **lookup-oriented**: it declares *which value to read for each
+row*. A keyed join is only one implementation of that lookup; interpolation
+(`InterpolatedSpec`, vol surfaces), fixings, and scenario reads are other
+implementations of the same `MarketRead`/`MarketDependency` idea. Don't think of
+market data as "join-oriented" — joins are one strategy among several.
+
 `CurveSpec(...).value(...)` with no `output` returns a delayed **`MarketRead`** —
 it knows *what* to read but not yet *where* to write it. `g.market(rate=...)`
 names the output column from the keyword. At compute time the engine attaches the
-market **before** compiling formulas, so **join keys must already be columns** on
-the input frame. Anything that derives a join key (normalizing wide rows into
+market **before** compiling formulas, so **lookup keys must already be columns** on
+the input frame. Anything that derives a lookup key (normalizing wide rows into
 legs, computing a reference date) is a *pre-step* — a plain transform or a
 `Workflow` stage — not a formula.
 
@@ -152,7 +161,88 @@ def _merton_call():
 The implementation still filters per branch and `concat`s — but the semantics are
 "choose among computations with one contract".
 
-## 6. Workflow: shape-changing stages
+## 6. Structure: component pricing + exposure + Fold
+
+A `FormulaGraph` prices **pure components** and must never know *position
+direction* — no `side`, `pay_receive`, `ativo`/`passivo`, `long`/`short`, or
+signed PV. A swap *is* its legs: each leg is priced purely, then weighted, then
+aggregated. That composition is a `Structure`:
+
+```
+component pricing  →  exposure/weighting  →  fold
+```
+
+```python
+import polars as pl
+from schenberg.core.structure import Structure
+from schenberg.core.fold import sum_
+
+swap_structure = (
+    Structure("swap", input=SwapLegInput)
+    .components(swap_leg_router, view="pricing")           # pure LegPricing per leg
+    .exposure(weighted_pv=pl.col("pv") * pl.col("leg_weight"))  # direction lives here
+    .fold(
+        by="swap_id",
+        returns=SwapOutput,
+        npv=sum_("weighted_pv"),
+        ativo_pv=sum_("weighted_pv", where=L.leg_role == "ativo"),
+        passivo_pv=sum_("weighted_pv", where=L.leg_role == "passivo"),
+    )
+)
+```
+
+- `components_frame(frame, market=...)` → the **pure** component prices (no sign).
+- `stage(frame, market=...)` → component prices **plus** exposure (`weighted_pv`).
+- `compute(frame, market=...)` → the folded output, one row per `swap_id`.
+- `explain()` / `info()` / `to_mermaid()` describe the whole pipeline.
+
+The pure leg `pv` is invariant to `leg_weight`; only the structure's exposure and
+fold turn it into a signed contribution. `ativo_pv` / `passivo_pv` are *fold
+classifications*, not pricing formulas.
+
+## 7. Fold: monoidal aggregation
+
+A `Fold` is the one place "group component rows by key and combine their values"
+lives — no ad-hoc `group_by(...).agg(...)` scattered through pricers. Declare the
+group keys, the output schema, and one aggregation per column with the `sum_`,
+`first_`, `count_`, `lit_` helpers:
+
+```python
+from schenberg.core.fold import Fold, sum_, lit_
+
+forward_price_fold = (
+    Fold("forward_price", input_schema=ForwardPricing)
+    .by(F.instrument_id)
+    .returns(InstrumentPrice, instrument_type=lit_("FORWARD"), price=sum_(P.value))
+)
+priced = forward_price_fold.compute(component_rows)   # lazy
+```
+
+Aggregations are *monoidal* (associative reductions with an empty-group unit), and
+inspectable — `explain()` renders `npv = sum(weighted_pv)` rather than an opaque
+expression. The same `Fold` powers both structured instruments (via `Structure`)
+and portfolio/book roll-ups.
+
+## 8. Shock and MarketPath
+
+A `Shock` is an **endomorphism** `MarketSnapshot → MarketSnapshot`: it returns a
+new snapshot with sources transformed, never mutating the original, and shocks
+**compose**. A `MarketPath` is a lens-lite that focuses one source/column to build
+one:
+
+```python
+from schenberg.market_data.path import MarketPath
+from schenberg.market_data.shocks import Shock
+
+bump = MarketPath("curves").column("zero_rate").modify(lambda r: r + 1e-4)
+stressed = market.apply(bump)                 # original market untouched
+scenario = Shock.compose(bump, vol_bump)      # stresses chain associatively
+```
+
+Shocks preserve source schemas and expose `explain()` / `info()`. Repricing under
+a stressed market is just `price_*(trades, market.apply(shock))`.
+
+## 9. Workflow: shape-changing stages
 
 A `FormulaGraph` is row-local (one column expression). When shapes change between
 steps — joins, `group_by`, repricing under a bumped market — use a `Workflow`: a
@@ -175,10 +265,10 @@ def prices(normalized_trades):
 env = workflow.run(raw=book)   # {"raw", "normalized_trades", "prices"}
 ```
 
-## 7. Debugging and introspection
+## 10. Debugging and introspection
 
-The *same* graph declaration powers execution and every report — they cannot
-drift:
+The *same* declaration powers execution and every report — they cannot drift.
+Graphs, routers, structures, folds, shocks and workflows are all explainable:
 
 - `graph.dependencies_of(term)` → the transitive inputs.
 - `graph.required_inputs()` → the columns a caller must supply.
@@ -190,6 +280,15 @@ drift:
 - `graph.stage(frame, market=..., view="price")` → materialize *every* intermediate
   as its own column; nulls propagate, so the first unexpectedly-null column is the
   root cause.
+- `structure.explain()` / `.to_mermaid()` → input → component graph/router →
+  exposure → fold → output; `structure.components_frame(...)` and `.stage(...)`
+  expose the pure prices and the weighted contributions.
+- `fold.explain()` / `router.explain()` / `router.diagnose(frame)` /
+  `workflow.explain()` / `shock.explain()` round out the picture.
+
+When a check wants to *accumulate* problems rather than raise on the first, a
+`DiagnosticReport` collects `Diagnostic`s (`add`/`extend`), answers `has_errors`,
+can `raise_if_errors()`, and renders `to_frame()`.
 
 ## Contracts at the boundary
 
@@ -214,9 +313,10 @@ the index on Jan 1, CPI in April") is still data when it reduces to a different
 ## Layers
 
 ```
-domain/        Pandera boundary schemas + enums                  (no deps)
-core/          Term, FormulaGraph, Router, MarketRead, Workflow  (the engine)
-market_data/   MarketSnapshot, sources, curve/vol specs, shocks
+domain/        Pandera boundary schemas + enums                              (no deps)
+core/          Term, FormulaGraph, Router, Structure, Fold, MarketRead,
+               Workflow, DiagnosticReport                                    (the engine)
+market_data/   MarketSnapshot, sources, curve/vol specs, MarketPath, Shock
 pricing/       instruments (swap, forward, option, ...) + portfolio
 ```
 

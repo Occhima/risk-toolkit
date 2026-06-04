@@ -72,12 +72,13 @@ class Router:
     mode: str = EXCLUSIVE
     contract_view: str | None = None
     contract_schema: object | None = None
+    name: str = "router"
 
     @classmethod
-    def on(cls, *columns: ColumnRef) -> Router:
+    def on(cls, *columns: ColumnRef, name: str = "router") -> Router:
         if not columns:
             raise ValueError("Router.on(...) requires at least one route column")
-        return cls(route_columns=tuple(columns))
+        return cls(route_columns=tuple(columns), name=name)
 
     # ---- contract & mode -------------------------------------------------
 
@@ -216,6 +217,7 @@ class Router:
 
     def info(self, *, view: str | None = None) -> dict[str, object]:
         return {
+            "name": self.name,
             "route_columns": [c.name for c in self.route_columns],
             "mode": self.mode,
             "view": self.contract_view,
@@ -225,7 +227,9 @@ class Router:
 
     def explain(self, *, view: str | None = None) -> str:
         schema_name = getattr(self.contract_schema, "__name__", None)
-        lines = [f"Router: {' , '.join(c.name for c in self.route_columns)}"]
+        columns = ", ".join(c.name for c in self.route_columns)
+        label = self.name if self.name != "router" else columns
+        lines = [f"Router: {label}"]
         if schema_name:
             lines[0] += f" -> {schema_name}"
         lines += ["", "Mode:", f"  - {self.mode}", "", "Route terms:"]

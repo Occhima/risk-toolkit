@@ -6,11 +6,17 @@
 
 ## Portfolio
 
-::: schenberg.pricing.portfolio
+::: schenberg.position.functions
 
 ## Swap
 
 ::: schenberg.pricing.instruments.swap.pricing
+
+::: schenberg.pricing.instruments.swap.structure
+
+## Structured products
+
+::: schenberg.pricing.structured
 
 ## Forward
 
