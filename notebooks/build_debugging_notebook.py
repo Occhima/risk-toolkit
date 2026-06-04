@@ -60,8 +60,6 @@ drift from the formulas.
 cells.append(
     code(
         r"""
-from __future__ import annotations
-
 from datetime import date
 from typing import cast
 
@@ -214,8 +212,8 @@ LEGEND = [
 
 def legend_handles():
     return [plt.Line2D([0], [0], marker="o", linestyle="", markersize=11,
-                       markerfacecolor=c, markeredgecolor="#1f2937", label=l)
-            for l, c in LEGEND]
+                       markerfacecolor=c, markeredgecolor="#1f2937", label=name)
+            for name, c in LEGEND]
 
 
 fig = render_graph(leg_graph, save=str(HERE / "images" / "01_cdi_leg_dag.png"))
@@ -277,10 +275,12 @@ leg = cast(LazyFrame[SwapLegInput], pl.DataFrame([{
     "fixed_rate": None, "real_coupon": None, "cashflow_amount": None,
 }]).lazy())
 
-healthy_pv = leg_graph.compute(leg, market=good, view="pricing").collect()["pv"][0]
-broken_pv = leg_graph.compute(leg, market=broken, view="pricing").collect()["pv"][0]
-print(f"healthy pv : {healthy_pv:,.2f}")
-print(f"broken  pv : {broken_pv}")   # <- null, and the fused query tells us nothing about why
+def priced_pv(market):
+    out = cast(pl.DataFrame, leg_graph.compute(leg, market=market, view="pricing").collect())
+    return out["pv"][0]
+
+print(f"healthy pv : {priced_pv(good):,.2f}")
+print(f"broken  pv : {priced_pv(broken)}")  # <- null; the fused query says nothing about why
 """
     )
 )
@@ -310,9 +310,11 @@ column that turns null is the root cause — everything after it is just collate
 cells.append(
     code(
         r"""
-staged = leg_graph.stage(leg, market=broken, view="pricing").collect()
+staged = cast(pl.DataFrame, leg_graph.stage(leg, market=broken, view="pricing").collect())
+# stage() materialises one column per *node*; the leg shares the discounted-cashflow
+# backbone, so its signed cashflow is `future_value` and its pv is `present_value`.
 ordered = ["forward_rate", "zero_rate", "cashflow_amount", "year_fraction",
-           "discount_factor", "signed_cashflow", "pv"]
+           "discount_factor", "future_value", "present_value"]
 staged.select(ordered)
 """
     )
@@ -341,7 +343,7 @@ cells.append(
     md(
         r"""
 The diagnosis writes itself: **`forward_rate` / `zero_rate` are null because the
-curve join missed**, and that nulls out `discount_factor → signed_cashflow → pv`.
+curve join missed**, and that nulls out `discount_factor → present_value`.
 Meanwhile `year_fraction` is fine — it only depends on `payment_days`, which never
 went near the curve. That contrast (one branch healthy, one branch dead) is the
 fingerprint of a market-data join failure rather than a formula bug.
@@ -400,11 +402,12 @@ The golden path for *"my NPV is null"*: **`stage` → `null_count` → first nul
 cells.append(
     md(
         r"""
-## 5. What the picture hints about simplifying the library
+## 5. The picture drove a refactor — now implemented
 
-Render the **generic forward** next to the **swap leg** and the duplication jumps
-out: both are *the same machine* — `discount_graph` (`year_fraction → discount_factor`)
-plus a per-instrument payoff that ends in `cashflow × discount_factor`.
+Render the **generic forward** next to the **swap leg**: both are *the same
+machine* — the shared `discounted_cashflow_graph` (`year_fraction →
+discount_factor → present_value`) plus a per-instrument payoff that defines
+`future_value`. This used to be duplicated; it is now **one shared backbone**.
 """
     )
 )
@@ -428,21 +431,26 @@ fig
 cells.append(
     md(
         r"""
-Same backbone (the left half of each graph is *identical*), same final
-`× discount_factor` step. A forward's `future_value = forward_price - strike` and a
-swap leg's `signed_cashflow = cashflow_amount × sign` are both just **"a future
-cashflow"** fed into the shared discount step. The only real difference is the
-payoff node and whether there's an FX leg.
+Both graphs now share the same `future_value → present_value` core (the right
+half is identical). A forward's `future_value = forward_price - strike` and a swap
+leg's `future_value = cashflow_amount × sign` are both just **"a future cashflow"**
+fed into the one shared discount step; the only real difference is the payoff node
+and whether an FX leg follows. The pay/receive sign is the leg's signed
+**quantity** — the same role `side` plays for a structured-product leg.
 
-And the *aggregation* rhymes too: `aggregate_swap_pv` sums signed leg PVs per
-`swap_id`, which is exactly what `price_structures` already does generically
-(`side × quantity × price` per `structure_id`). **A swap is a two-leg structured
-product whose `quantity` is the pay/receive sign.**
+What changed (all three landed in the library, tests and every number unchanged):
 
-That is the user's hypothesis, and the graphs confirm it. The concrete,
-code-grounded version of *"can we simplify the graph declaration and the market
-layer?"* lives in **[`REFACTORING_NOTES.md`](./REFACTORING_NOTES.md)** — three
-proposals, each with the lines of boilerplate it removes.
+1. **One discounted-cashflow backbone.** `discounted_cashflow_graph` owns the
+   `present_value = future_value × discount_factor` step; forward and swap leg
+   compose it instead of each re-stating the discount-and-multiply.
+2. **`compose` carries views + a single `assemble` verb.** The repeated
+   `compose → for_market → returns` boilerplate is gone; every instrument graph is
+   built through `FormulaGraph.assemble`.
+3. **A simpler market layer.** One `JoinSpec` builds every keyed read; the
+   `MarketRead` deferred-output class and its overloads are deleted, and
+   `for_market` just names each column by its keyword.
+
+The before/after rationale is in **[`REFACTORING_NOTES.md`](./REFACTORING_NOTES.md)**.
 """
     )
 )

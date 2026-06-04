@@ -58,6 +58,10 @@ markers = [
 line-length = 100
 target-version = "py312"
 src = ["schenberg", "plugins", "tests"]
+# Generated, fully-executed teaching notebooks: regenerated from the .py builder,
+# whose cells use `%matplotlib inline` and an injected setup cell that isort can't
+# tidy. The builder itself is linted as normal source.
+extend-exclude = ["notebooks/*.ipynb"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "PL"]
