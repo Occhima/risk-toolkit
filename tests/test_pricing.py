@@ -8,7 +8,9 @@ from schenberg.pricing.api import price_energy_forward, price_swap
 from schenberg.pricing.instruments.forward.energy import energy_forward_graph
 
 
-def test_price_swap_returns_aggregated_npv(swap_legs, swap_market) -> None:
+def test_price_swap_folds_weighted_leg_pvs_into_npv(swap_legs, swap_market) -> None:
+    # ativo/passivo PVs are structure-fold classifications (filtered sums on
+    # leg_role); npv is the sum of weighted_pv. None of this is in the pricing graph.
     result = cast(pl.DataFrame, price_swap(swap_legs, swap_market).collect())
 
     assert result.select("swap_id").item() == "SWP-1"

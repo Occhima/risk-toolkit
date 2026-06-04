@@ -23,7 +23,8 @@ from schenberg.market_data.calendar.conventions import Calendar
 from schenberg.market_data.curves.di import DiCurve, DiCurveSpec
 from schenberg.market_data.forwards import EnergyForwardCurveSpec
 from schenberg.market_data.fx import FxRates
-from schenberg.market_data.shocks import ParallelZeroRateShock
+from schenberg.market_data.path import MarketPath
+from schenberg.market_data.shocks import Shock, curve_parallel_shift
 from schenberg.market_data.snapshot import MarketSnapshot
 from schenberg.market_data.sources import MarketSource
 from schenberg.position.functions import (
@@ -102,13 +103,23 @@ def test_market_snapshot_from_sources_attach_and_shock() -> None:
     trades = pl.DataFrame({"id_indexador": [1], "payment_days": [21]}).lazy()
 
     attached = snapshot.attach(trades, DiCurveSpec().zero_rate(output="rate"))
-    bumped = ParallelZeroRateShock(shift=0.01).apply(snapshot)
+    bumped = snapshot.apply(curve_parallel_shift(source="di_curve", shift=0.01))
 
     assert snapshot.source("di_curve") == source
     expected_rate = 0.1
     assert cast(pl.DataFrame, attached.collect()).select("rate").item() == expected_rate
+    # The shock preserves the source schema and does not mutate the original.
     assert bumped.source("di_curve").schema is DiCurveContract
+    assert cast(pl.DataFrame, snapshot.source("di_curve").data.collect()).select(
+        "zero_rate"
+    ).item() == pytest.approx(0.10)
     assert cast(pl.DataFrame, bumped.source("di_curve").data.collect()).select(
+        "zero_rate"
+    ).item() == pytest.approx(0.11)
+    # A MarketPath builds the same shock as a lens-lite modifier.
+    via_path = MarketPath("di_curve").column("zero_rate").modify(lambda r: r + 0.01)
+    assert isinstance(via_path, Shock)
+    assert cast(pl.DataFrame, snapshot.apply(via_path).source("di_curve").data.collect()).select(
         "zero_rate"
     ).item() == pytest.approx(0.11)
 

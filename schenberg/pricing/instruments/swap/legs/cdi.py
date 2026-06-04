@@ -34,7 +34,7 @@ def _build() -> FormulaGraph:
         return notional * forward_rate * accrual
 
     return assemble_leg(
-        g, t=t, zero_rate=m.zero_rate, cashflow_amount=cashflow_amount, year_fraction=year_fraction
+        g, zero_rate=m.zero_rate, cashflow_amount=cashflow_amount, year_fraction=year_fraction
     )
 
 

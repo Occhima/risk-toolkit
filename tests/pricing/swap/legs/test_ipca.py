@@ -44,7 +44,8 @@ def test_ipca_leg_pricing_preserves_formula() -> None:
             "swap_id": ["S"],
             "leg_id": ["ipca"],
             "leg_kind": ["IPCA"],
-            "pay_receive": ["PAY"],
+            "leg_role": ["passivo"],
+            "leg_weight": [-1.0],
             "notional": [1_000_000.0],
             "id_indexador": [2],
             "payment_days": [252],
@@ -63,4 +64,6 @@ def test_ipca_leg_pricing_preserves_formula() -> None:
 
     cashflow = 1_000_000.0 * 1.06 * 1.02 - 1_000_000.0
     assert out.select("cashflow_amount").item() == pytest.approx(cashflow)
-    assert out.select("pv").item() == pytest.approx(-cashflow * math.exp(-0.05))
+    # Pure leg pricing carries no direction: pv is the unsigned discounted cashflow.
+    # The pay/receive sign (leg_weight) is applied at the swap Structure layer.
+    assert out.select("pv").item() == pytest.approx(cashflow * math.exp(-0.05))

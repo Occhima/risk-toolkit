@@ -13,4 +13,5 @@ forward_router = Router.on(
     F.instrument_type,
     F.forward_family,
     F.settlement_type,
+    name="forward_router",
 ).default(base_forward_graph)

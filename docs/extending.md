@@ -70,17 +70,39 @@ date. That `reference_date` is:
 Because the convention reduces to a *value* in a column, **one graph prices every
 index** — no router, no branching in the formulas.
 
-## Aggregate and expose
+## Keep pricing graphs pure — direction lives in a `Structure`
 
-Finish with a thin public function that normalizes, runs the graph, and
-aggregates to the level you report at — mirroring the built-in pricers:
+A `FormulaGraph` prices **pure components**. It must never compute signed PV from
+`side` / `pay_receive` / `ativo` / `passivo` / `long` / `short`. A swap leg graph
+computes `pv = cashflow_amount * discount_factor` — no sign. The position
+direction (`leg_weight`) is applied one layer up, in a `Structure`'s exposure, and
+the ativo/passivo split is a `Fold` classification. See
+[`concepts.md`](concepts.md#6-structure-component-pricing--exposure--fold).
+
+## Aggregate and expose with a `Fold`
+
+Finish with a thin public function that normalizes, runs the graph/structure, and
+aggregates with a `Fold` (not an ad-hoc `group_by(...).agg(...)`) to the level you
+report at — mirroring the built-in pricers:
 
 ```python
+from schenberg.core.fold import Fold, sum_, lit_
+
+my_fold = (
+    Fold("my_instrument", input_schema=MyPricing)
+    .by("instrument_id")
+    .returns(InstrumentPrice, instrument_type=lit_("MY_TYPE"), price=sum_("value"))
+)
+
 def price_my_instrument(legs, market):
-    prepared = add_join_keys(legs)
+    prepared = add_lookup_keys(legs)
     priced = g.compute(prepared, market=market, view="pricing")
-    return priced.group_by("instrument_id").agg(price=pl.col("value").sum())
+    return my_fold.compute(priced)
 ```
+
+For a structured instrument (component pricing + exposure + fold), assemble a
+`Structure` and call `structure.compute(legs, market=market)` — see the swap
+structure in `schenberg/pricing/instruments/swap/structure.py`.
 
 ## Fixing / reference-date adaptation
 
@@ -139,10 +161,13 @@ with `instrument_type = "STRUCTURE"`.
 ## Checklist
 
 - [ ] New math → a graph (`FormulaGraph`), reusing `extend()` / `compose_with()` / shared expressions.
-- [ ] Per-row formula forks → a `Router`; pure value differences → a join key.
-- [ ] Join keys not in the raw input → a transform/stage *before* the graph.
+- [ ] Position direction (`side`/`pay_receive`/weight) → a `Structure`'s exposure, **never** the pricing graph.
+- [ ] Per-row formula forks → a `Router`; pure value differences → a lookup key.
+- [ ] "Group by id and combine values" → a `Fold` (or a `Structure`'s fold), not ad-hoc `group_by`.
+- [ ] Lookup keys not in the raw input → a transform/stage *before* the graph.
 - [ ] Index/convention differences → a data registry, extended by one row.
 - [ ] Fixing-date convention → `date_rules` expression, not a router case.
-- [ ] Structured product → `price_structures`, not a new graph or router.
+- [ ] Instrument made of weighted components → a `Structure`; cross-instrument book → `price_structures`.
+- [ ] Scenario/stress → a `Shock` (built via `MarketPath`), applied with `market.apply(shock)`.
 - [ ] Public function returns a lazy frame; `collect()` stays the caller's call.
 - [ ] Boundary typed with a Pandera schema; internals stay plain Polars.

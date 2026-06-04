@@ -36,6 +36,10 @@
 
 ::: schenberg.market_data.calendar.business_days
 
+## MarketPath
+
+::: schenberg.market_data.path.MarketPath
+
 ## Shocks
 
 ::: schenberg.market_data.shocks
