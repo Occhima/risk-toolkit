@@ -18,7 +18,7 @@ import rustworkx as rx
 
 from schenberg.core.columns import ColumnRef, col_name
 
-from .market import MarketDependency, MarketRead
+from .market import MarketDependency
 
 if TYPE_CHECKING:
     from schenberg.market_data.snapshot import MarketSnapshot
@@ -143,30 +143,23 @@ class FormulaGraph:
 
     # ---- configuration (chainable) ---------------------------------------
 
-    def for_market(self, **reads: MarketRead | MarketDependency) -> FormulaGraph:
+    def for_market(self, **reads: MarketDependency) -> FormulaGraph:
         """Declare market data, naming each output column by its keyword.
 
-        Each keyword is the output column the read writes onto the frame. Pass
-        either a :class:`MarketRead` (a spec whose output is finalized here) or a
-        fully built :class:`MarketDependency` (whose fixed output must match the
-        keyword)::
+        Each keyword *is* the output column the read writes onto the frame: the
+        read is renamed to it via :meth:`MarketDependency.with_output`, so the
+        same spec can feed differently-named columns on different graphs::
 
             graph.for_market(
                 rate=CURVES.value("zero_rate", indexer=OPT.id_indexador, ...),
                 vol=VOL.implied_vol(indexer=OPT.id_indexador, ...),
             )
+
+        Multi-output joins cannot be renamed by keyword; attach them with
+        :meth:`uses_market`.
         """
         for output, read in reads.items():
-            if isinstance(read, MarketRead):
-                self._market.append(read.as_output(output))
-            elif output in set(read.outputs.values()):
-                self._market.append(read)
-            else:
-                raise ValueError(
-                    f"market dependency for {output!r} already outputs "
-                    f"{sorted(read.outputs.values())}; use uses_market(...) for "
-                    f"fixed-output dependencies"
-                )
+            self._market.append(read.with_output(output))
         return self
 
     def uses_market(self, *requirements: MarketDependency) -> FormulaGraph:

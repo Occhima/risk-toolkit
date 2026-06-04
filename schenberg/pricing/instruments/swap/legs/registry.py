@@ -13,7 +13,7 @@ from collections.abc import Mapping
 
 from schenberg.core.columns import cols
 from schenberg.core.graph import FormulaGraph
-from schenberg.core.market import MarketDependency, MarketRead
+from schenberg.core.market import MarketDependency
 from schenberg.domain.schemas import LegPricing, SwapLegInput
 from schenberg.market_data.curves import CurveSpec
 from schenberg.market_data.fixings import FixingsSpec
@@ -32,7 +32,7 @@ def register_leg(
     *kinds: str,
     name: str,
     cashflow: FormulaGraph,
-    market: Mapping[str, MarketRead | MarketDependency] | None = None,
+    market: Mapping[str, MarketDependency] | None = None,
 ) -> FormulaGraph:
     """Build a priced leg graph from a payoff + market reads, routing every ``kind`` to it.
 

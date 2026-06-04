@@ -13,7 +13,7 @@ import polars as pl
 
 from schenberg.core.columns import cols
 from schenberg.core.graph import FormulaGraph
-from schenberg.core.market import MarketRead
+from schenberg.core.market import MarketDependency
 from schenberg.core.router import Router
 from schenberg.domain.enums import OptionKind, OptionModel
 from schenberg.domain.schemas.option import OptionPricedState, OptionTrade
@@ -94,7 +94,7 @@ def _model(
     model: OptionModel,
     kind: OptionKind,
     *carry_graphs: FormulaGraph,
-    **carry_market: MarketRead,
+    **carry_market: MarketDependency,
 ) -> None:
     """Declare one (model, kind): build its price and risk leaves and route both.
 

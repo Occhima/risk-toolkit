@@ -9,7 +9,7 @@ import polars as pl
 import pytest
 from schenberg.core.columns import ColumnLike, ColumnRef, col_name, cols
 from schenberg.core.graph import FormulaGraph
-from schenberg.core.market import MarketRead, MarketRequirement
+from schenberg.core.market import MarketRequirement
 from schenberg.core.pipeline import Workflow
 from schenberg.core.router import Router
 from schenberg.domain.schemas.option import OptionPrice
@@ -86,29 +86,32 @@ def test_for_market_finalizes_output_from_kwarg_and_view_dtypes() -> None:
     assert graph.view_dtypes("pricing") == {"pv": pl.Float64}
 
 
-def test_for_market_rejects_mismatched_fixed_output() -> None:
+def test_for_market_renames_output_to_keyword() -> None:
+    # for_market always names the output column by its keyword, even when the
+    # read already carries a (default) output. The same spec can feed columns
+    # under different names on different graphs.
     graph = FormulaGraph("mkt2")
     fixed = CurveSpec("curves").value("zero_rate", output="rate")
     assert isinstance(fixed, MarketRequirement)
-    with pytest.raises(ValueError, match="use uses_market"):
-        graph.for_market(zero_rate=fixed)
+    graph.for_market(zero_rate=fixed)
+    assert graph._market[0].outputs == {"zero_rate": "zero_rate"}
 
 
-def test_curve_spec_returns_market_read_when_output_omitted() -> None:
+def test_curve_spec_defaults_output_to_value_col_when_omitted() -> None:
     read = CurveSpec("curves").value("zero_rate", indexer="id_indexador", tenor="payment_days")
-    assert isinstance(read, MarketRead)
-    req = read.as_output("rate")
-    assert req.outputs == {"zero_rate": "rate"}
+    assert isinstance(read, MarketRequirement)
+    assert read.outputs == {"zero_rate": "zero_rate"}
+    # for_market renames it; with_output is the underlying rename verb.
+    assert read.with_output("rate").outputs == {"zero_rate": "rate"}
 
 
-def test_vol_surface_spec_returns_market_read_when_output_omitted() -> None:
+def test_vol_surface_spec_defaults_output_to_value_col_when_omitted() -> None:
     OPT = cols(OptionPrice)  # any schema; just exercising ColumnLike
     read = VolSurfaceSpec("vol_surface").implied_vol(
         indexer=ColumnRef("id_indexador"), tenor="payment_days", strike=OPT.price
     )
-    assert isinstance(read, MarketRead)
-    req = read.as_output("vol")
-    assert req.outputs == {"implied_vol": "vol"}
+    assert read.outputs == {"implied_vol": "implied_vol"}
+    assert read.with_output("vol").outputs == {"implied_vol": "vol"}
 
 
 def test_compose_with_merges_formulas() -> None:
