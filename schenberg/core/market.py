@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Protocol
+from dataclasses import dataclass, replace
+from typing import TYPE_CHECKING, Protocol
 
 import polars as pl
 
@@ -15,10 +14,12 @@ if TYPE_CHECKING:
 
 
 class MarketDependency(Protocol):
-    """Small protocol for market data a graph can attach before formulas.
+    """Market data a graph can attach before its formulas run.
 
-    Most dependencies are simple joins. A few, such as volatility surfaces,
-    interpolate. Both expose the same graph-facing shape.
+    Most dependencies are a simple keyed join (:class:`MarketRequirement`); a few,
+    such as volatility surfaces, interpolate. Both expose the same graph-facing
+    shape, and both can have their (single) output column renamed by
+    :meth:`with_output` so ``FormulaGraph.for_market`` can name it from a keyword.
     """
 
     table: str
@@ -30,28 +31,22 @@ class MarketDependency(Protocol):
     @property
     def right_keys(self) -> tuple[str, ...]: ...
 
+    def with_output(self, output: str) -> MarketDependency: ...
+
     def attach(self, lf: pl.LazyFrame, snapshot: MarketSnapshot) -> pl.LazyFrame: ...
 
 
 @dataclass(frozen=True, slots=True)
-class MarketRead:
-    """A market read whose output column is not yet decided.
+class MarketRequirement:
+    """A keyed left-join read: pull ``outputs`` columns from ``table`` on ``on``.
 
-    Market specs return a ``MarketRead`` when no ``output`` is passed: the read
-    knows its source and join keys but waits for ``FormulaGraph.for_market`` to
-    name the output column from the keyword it is bound to::
-
-        graph.for_market(rate=CURVES.value("zero_rate", ...))  # -> output "rate"
+    A spec hands back a requirement whose single output defaults to the value
+    column's own name; ``FormulaGraph.for_market(rate=...)`` then renames it to the
+    keyword via :meth:`with_output`. Multi-output requirements (a join that writes
+    several columns at once) are attached through ``uses_market`` and cannot be
+    renamed by keyword.
     """
 
-    build: Callable[[str], Any]
-
-    def as_output(self, output: str) -> MarketDependency:
-        return self.build(output)
-
-
-@dataclass(frozen=True, slots=True)
-class MarketRequirement:
     table: str
     on: ColumnSet
     outputs: dict[str, str]
@@ -63,6 +58,15 @@ class MarketRequirement:
     @property
     def right_keys(self) -> tuple[str, ...]:
         return self.on.right_keys
+
+    def with_output(self, output: str) -> MarketRequirement:
+        if len(self.outputs) != 1:
+            raise ValueError(
+                f"cannot rename a multi-output requirement (table {self.table!r} writes "
+                f"{sorted(self.outputs.values())}); attach it with uses_market(...)"
+            )
+        (value_col,) = self.outputs
+        return replace(self, outputs={value_col: output})
 
     def attach(self, lf: pl.LazyFrame, snapshot: MarketSnapshot) -> pl.LazyFrame:
         """Attach market columns by a left join."""

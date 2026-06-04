@@ -5,10 +5,11 @@ from dataclasses import dataclass
 import pandera.polars as pa
 from pandera.typing.polars import LazyFrame
 
-from schenberg.core.columns import ColumnLike, ColumnSet, col_name
+from schenberg.core.columns import ColumnLike
 from schenberg.core.market import MarketRequirement
 from schenberg.domain.schemas.market_data import FxRatesContract
 from schenberg.market_data.sources import MarketSource
+from schenberg.market_data.specs import JoinSpec
 
 
 @dataclass(frozen=True, slots=True)
@@ -21,11 +22,7 @@ class FxRatesSpec:
         currency: ColumnLike = "currency",
         output: str = "fx_rate",
     ) -> MarketRequirement:
-        return MarketRequirement(
-            table=self.name,
-            on=ColumnSet.from_pairs((col_name(currency), "currency")),
-            outputs={"fx_rate": output},
-        )
+        return JoinSpec(self.name).read("fx_rate", (currency, "currency"), output=output)
 
 
 @dataclass(frozen=True, slots=True)

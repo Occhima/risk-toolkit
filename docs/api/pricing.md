@@ -12,8 +12,6 @@
 
 ::: schenberg.pricing.instruments.swap.pricing
 
-::: schenberg.pricing.instruments.swap.engine
-
 ## Forward
 
 ::: schenberg.pricing.instruments.forward.generic

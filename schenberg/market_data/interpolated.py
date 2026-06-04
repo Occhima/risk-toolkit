@@ -23,15 +23,14 @@ their raw quoted units (e.g. tenor in days) — no day-count conversion needed.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, cast, overload
+from dataclasses import dataclass, replace
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
 import polars as pl
 from numpy.typing import ArrayLike, NDArray
 
 from schenberg.core.columns import ColumnLike, col_name
-from schenberg.core.market import MarketRead
 from schenberg.math.interpolation import bilinear, interp_linear
 
 if TYPE_CHECKING:
@@ -124,6 +123,9 @@ class InterpolatedRequirement:
     def outputs(self) -> dict[str, str]:
         return {self.value_col: self.output}
 
+    def with_output(self, output: str) -> InterpolatedRequirement:
+        return replace(self, output=output)
+
     @property
     def left_keys(self) -> tuple[str, ...]:
         return (self.group[0], *(a[0] for a in self.axes))
@@ -165,26 +167,6 @@ class InterpolatedSpec:
     axes: tuple[str, ...]
     group: str = "id_indexador"
 
-    @overload
-    def value(
-        self,
-        value_col: str,
-        *,
-        output: str,
-        on: tuple[ColumnLike, ...] | None = None,
-        group_col: ColumnLike | None = None,
-    ) -> InterpolatedRequirement: ...
-
-    @overload
-    def value(
-        self,
-        value_col: str,
-        *,
-        output: None = None,
-        on: tuple[ColumnLike, ...] | None = None,
-        group_col: ColumnLike | None = None,
-    ) -> MarketRead: ...
-
     def value(
         self,
         value_col: str,
@@ -192,13 +174,12 @@ class InterpolatedSpec:
         output: str | None = None,
         on: tuple[ColumnLike, ...] | None = None,
         group_col: ColumnLike | None = None,
-    ) -> MarketRead | InterpolatedRequirement:
+    ) -> InterpolatedRequirement:
         """Build the attachable requirement.
 
         ``on`` names the trade-side axis columns (defaults to the quote axes);
-        ``group_col`` the trade-side group key; ``output`` the column to write.
-        With ``output`` omitted, returns a :class:`MarketRead` finalized by
-        ``FormulaGraph.for_market``.
+        ``group_col`` the trade-side group key. With ``output`` omitted it defaults
+        to ``value_col`` and is renamed later by ``FormulaGraph.for_market``.
         """
         raw_axes = on if on is not None else self.axes
         if len(raw_axes) != len(self.axes):
@@ -206,13 +187,10 @@ class InterpolatedSpec:
         trade_axes = tuple(col_name(a) for a in raw_axes)
         group_left = col_name(group_col) if group_col is not None else self.group
 
-        def build(out: str) -> InterpolatedRequirement:
-            return InterpolatedRequirement(
-                table=self.name,
-                group=(group_left, self.group),
-                axes=tuple(zip(trade_axes, self.axes, strict=True)),
-                value_col=value_col,
-                output=out,
-            )
-
-        return build(output) if output is not None else MarketRead(build)
+        return InterpolatedRequirement(
+            table=self.name,
+            group=(group_left, self.group),
+            axes=tuple(zip(trade_axes, self.axes, strict=True)),
+            value_col=value_col,
+            output=output or value_col,
+        )

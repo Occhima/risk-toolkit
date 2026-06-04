@@ -18,7 +18,7 @@ import rustworkx as rx
 
 from schenberg.core.columns import ColumnRef, col_name
 
-from .market import MarketDependency, MarketRead
+from .market import MarketDependency
 
 if TYPE_CHECKING:
     from schenberg.market_data.snapshot import MarketSnapshot
@@ -143,30 +143,23 @@ class FormulaGraph:
 
     # ---- configuration (chainable) ---------------------------------------
 
-    def for_market(self, **reads: MarketRead | MarketDependency) -> FormulaGraph:
+    def for_market(self, **reads: MarketDependency) -> FormulaGraph:
         """Declare market data, naming each output column by its keyword.
 
-        Each keyword is the output column the read writes onto the frame. Pass
-        either a :class:`MarketRead` (a spec whose output is finalized here) or a
-        fully built :class:`MarketDependency` (whose fixed output must match the
-        keyword)::
+        Each keyword *is* the output column the read writes onto the frame: the
+        read is renamed to it via :meth:`MarketDependency.with_output`, so the
+        same spec can feed differently-named columns on different graphs::
 
             graph.for_market(
                 rate=CURVES.value("zero_rate", indexer=OPT.id_indexador, ...),
                 vol=VOL.implied_vol(indexer=OPT.id_indexador, ...),
             )
+
+        Multi-output joins cannot be renamed by keyword; attach them with
+        :meth:`uses_market`.
         """
         for output, read in reads.items():
-            if isinstance(read, MarketRead):
-                self._market.append(read.as_output(output))
-            elif output in set(read.outputs.values()):
-                self._market.append(read)
-            else:
-                raise ValueError(
-                    f"market dependency for {output!r} already outputs "
-                    f"{sorted(read.outputs.values())}; use uses_market(...) for "
-                    f"fixed-output dependencies"
-                )
+            self._market.append(read.with_output(output))
         return self
 
     def uses_market(self, *requirements: MarketDependency) -> FormulaGraph:
@@ -235,6 +228,14 @@ class FormulaGraph:
                 formulas[node.name] = node
             merged._input_aliases.update(g._input_aliases)
             merged._market.extend(g._market)
+            for view, mapping in g._views.items():  # carry views; a re-declared
+                existing = merged._views.setdefault(view, {})  # view must not conflict
+                for col, node_name in mapping.items():
+                    if existing.get(col, node_name) != node_name:
+                        raise ValueError(
+                            f"conflicting view column {view}.{col} in compose({name!r})"
+                        )
+                    existing[col] = node_name
 
         for node in formulas.values():  # 1. formula nodes
             merged._indices[node.name] = merged._graph.add_node(node)
@@ -252,6 +253,33 @@ class FormulaGraph:
         and ``b`` into a fresh graph (``self`` first), defaulting the new name to
         ``self.name``."""
         return type(self).compose(name or self.name, self, *others)
+
+    @classmethod
+    def assemble(
+        cls,
+        name: str,
+        *graphs: FormulaGraph,
+        market: Mapping[str, MarketDependency] | None = None,
+        fixed_market: tuple[MarketDependency, ...] = (),
+        schema: object | None = None,
+        view: str = "pricing",
+    ) -> FormulaGraph:
+        """One verb for the ``compose → for_market → returns`` assembly recipe.
+
+        Merge ``graphs`` (their views carry through :meth:`compose`), attach the
+        ``market`` reads (named by keyword) and any ``fixed_market`` multi-output
+        joins, and publish ``view`` from ``schema``. This is the single way every
+        instrument graph is built — swap legs, forwards, energy — so the recipe is
+        stated once instead of re-spelled per instrument.
+        """
+        graph = cls.compose(name, *graphs)
+        if market:
+            graph.for_market(**market)
+        if fixed_market:
+            graph.uses_market(*fixed_market)
+        if schema is not None:
+            graph.returns(view, schema)
+        return graph
 
     # ---- compilation -----------------------------------------------------
 

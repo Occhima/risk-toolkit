@@ -8,6 +8,10 @@
 
 ::: schenberg.market_data.sources.MarketSource
 
+## JoinSpec
+
+::: schenberg.market_data.specs.JoinSpec
+
 ## Curves
 
 ::: schenberg.market_data.curves.CurveSpec
