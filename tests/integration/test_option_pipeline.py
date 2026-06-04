@@ -87,10 +87,14 @@ def test_book_respects_put_call_parity(book) -> None:
 
 def test_risk_columns_have_sane_signs(book) -> None:
     options, market = book
-    df = cast(
+    # The risk view satisfies exactly the OptionPriceWithGreeks contract, so
+    # option_kind is recovered by joining back to the trades on option_id.
+    risk = cast(
         pl.DataFrame,
         option_risk_router.compute(options, market=market, view="risk").collect(),
     )
+    kinds = cast(pl.DataFrame, options.select("option_id", "option_kind").collect())
+    df = risk.join(kinds, on="option_id")
     assert (df["gamma"].to_numpy() > 0).all()
     assert (df["vega"].to_numpy() > 0).all()
     calls = df.filter(pl.col("option_kind") == "CALL")

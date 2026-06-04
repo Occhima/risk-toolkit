@@ -3,9 +3,18 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
 import polars as pl
+
+
+@runtime_checkable
+class NamedColumn(Protocol):
+    """Anything that names a single column: a :class:`ColumnRef` or a graph
+    :class:`~schenberg.core.graph.Term`. Defined as a structural protocol so
+    ``columns`` stays free of a graph import (no cycle)."""
+
+    name: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,15 +43,18 @@ class RoutePredicate:
         raise ValueError(f"unsupported route operation: {self.op!r}")
 
 
-# A column may be referenced either by its plain string name or by a
-# schema-derived ColumnRef. Market specs accept either so call sites can stay
-# terse: ``VOL.implied_vol(strike=OPT.strike)`` instead of ``strike=OPT.strike.name``.
-ColumnLike = str | ColumnRef
+# A column may be referenced by its plain string name, a schema-derived
+# ColumnRef, or a graph Term (which also exposes ``.name``). Market specs accept
+# any of them so call sites can stay terse: ``VOL.implied_vol(strike=t.strike)``
+# instead of ``strike=t.strike.name``.
+ColumnLike = str | NamedColumn
 
 
 def col_name(col: ColumnLike) -> str:
-    """Normalize a string-or-ColumnRef to its column name."""
-    return col.name if isinstance(col, ColumnRef) else col
+    """Normalize a string, ColumnRef, or Term to its column name."""
+    if isinstance(col, str):
+        return col
+    return col.name
 
 
 class SchemaColumns:

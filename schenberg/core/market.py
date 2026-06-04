@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Protocol
 
@@ -19,7 +20,7 @@ class MarketDependency(Protocol):
     Most dependencies are a simple keyed join (:class:`MarketRequirement`); a few,
     such as volatility surfaces, interpolate. Both expose the same graph-facing
     shape, and both can have their (single) output column renamed by
-    :meth:`with_output` so ``FormulaGraph.for_market`` can name it from a keyword.
+    :meth:`with_output` so ``g.market(rate=...)`` can name it from a keyword.
     """
 
     table: str
@@ -37,14 +38,42 @@ class MarketDependency(Protocol):
 
 
 @dataclass(frozen=True, slots=True)
+class MarketRead:
+    """A market read that knows *what* to read but not yet *where* to write it.
+
+    Specs hand back a ``MarketRead`` when no ``output`` column is named. The
+    output is supplied later — ``g.market(rate=CurveSpec("curves").value(...))``
+    names it from the keyword — by calling :meth:`as_output`, which builds the
+    concrete :class:`MarketDependency`. This is the Reader half of the market
+    layer: a delayed dependency awaiting its environment binding.
+    """
+
+    build: Callable[[str], MarketDependency]
+
+    def as_output(self, output: str) -> MarketDependency:
+        return self.build(output)
+
+
+# Either a fully built dependency (output fixed) or a delayed read awaiting an
+# output name. ``g.market`` accepts both and finalizes a read.
+AttachableMarket = MarketDependency | MarketRead
+
+
+def finalize_market(read: AttachableMarket, output: str) -> MarketDependency:
+    """Bind ``output`` onto a read or rename a built dependency to it."""
+    if isinstance(read, MarketRead):
+        return read.as_output(output)
+    return read.with_output(output)
+
+
+@dataclass(frozen=True, slots=True)
 class MarketRequirement:
     """A keyed left-join read: pull ``outputs`` columns from ``table`` on ``on``.
 
-    A spec hands back a requirement whose single output defaults to the value
-    column's own name; ``FormulaGraph.for_market(rate=...)`` then renames it to the
-    keyword via :meth:`with_output`. Multi-output requirements (a join that writes
-    several columns at once) are attached through ``uses_market`` and cannot be
-    renamed by keyword.
+    A spec hands back a requirement whose output ``g.market(rate=...)`` names from
+    its keyword via :meth:`with_output`. A multi-output requirement (a join that
+    writes several columns at once) cannot be renamed by keyword; ``g.market``
+    keeps its own output names instead.
     """
 
     table: str
@@ -63,7 +92,8 @@ class MarketRequirement:
         if len(self.outputs) != 1:
             raise ValueError(
                 f"cannot rename a multi-output requirement (table {self.table!r} writes "
-                f"{sorted(self.outputs.values())}); attach it with uses_market(...)"
+                f"{sorted(self.outputs.values())}); pass it to g.market(), which keeps "
+                f"its own output names"
             )
         (value_col,) = self.outputs
         return replace(self, outputs={value_col: output})

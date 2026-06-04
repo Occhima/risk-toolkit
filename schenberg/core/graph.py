@@ -1,8 +1,13 @@
-"""Formula-graph engine.
+"""Formula-graph engine: terms, dependencies, and interpretations.
 
-A semantic formula DAG (backed by rustworkx) that compiles into Polars
-expressions. rustworkx is an internal detail: it never appears in a public
-signature. Nothing in this module calls .collect().
+A Schenberg formula is a statically inspectable pricing program. Its values —
+inputs, market reads, literals, and derived formulas — are all :class:`Term`\\ s,
+wired into an open, typed :class:`FormulaGraph`. The same graph declaration is
+*interpreted* many ways: compiled to lazy Polars expressions (:meth:`compute`,
+:meth:`stage`), to market requirements, to Mermaid diagrams (:meth:`to_mermaid`),
+to explanation text (:meth:`explain`), or to dependency / contract reports
+(:meth:`info`). rustworkx owns the topology; Polars owns execution. Nothing here
+calls ``.collect()``.
 """
 
 from __future__ import annotations
@@ -10,15 +15,14 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
-from inspect import signature
+from inspect import Parameter, signature
 from typing import TYPE_CHECKING, Any, cast
 
 import polars as pl
 import rustworkx as rx
 
-from schenberg.core.columns import ColumnRef, col_name
-
-from .market import MarketDependency
+from schenberg.core.columns import ColumnRef
+from schenberg.core.market import AttachableMarket, MarketDependency, MarketRead, finalize_market
 
 if TYPE_CHECKING:
     from schenberg.market_data.snapshot import MarketSnapshot
@@ -26,22 +30,83 @@ if TYPE_CHECKING:
 FormulaFn = Callable[..., pl.Expr]
 
 
-class NodeKind(StrEnum):
-    INPUT = "input"  # a column expected to already exist in the frame (fn is None)
-    FORMULA = "formula"  # derived from other nodes via fn
+class TermKind(StrEnum):
+    INPUT = "input"  # a boundary column the caller supplies (fn is None)
+    MARKET = "market"  # a boundary column an attached market read supplies
+    FORMULA = "formula"  # derived from other terms via fn
+    LITERAL = "literal"  # a constant value
+    ALIAS = "alias"  # a renamed reference to another term
 
 
 @dataclass(frozen=True, slots=True)
-class FormulaNode:
+class Term[T]:
+    """One value in a :class:`FormulaGraph`.
+
+    A term is both a graph *node* and a reusable *reference*: ``g.formula`` hands
+    one back, ``g.input.spot`` / ``g.market(...)`` expose them, and they flow into
+    ``uses(...)`` defaults and ``returns(...)`` mappings. The ``name`` is the
+    column the term materializes as; ``kind`` classifies the boundary; ``symbol``
+    / ``latex`` / ``description`` drive introspection only and never affect
+    execution.
+    """
+
     name: str
-    kind: NodeKind
+    kind: TermKind
     deps: tuple[str, ...] = ()
     fn: FormulaFn | None = None
     dtype: Any | None = None
-    tags: tuple[str, ...] = ()
-    description: str | None = None
+    value: Any | None = None
     symbol: str | None = None
     latex: str | None = None
+    description: str | None = None
+    tags: tuple[str, ...] = ()
+
+    def __str__(self) -> str:
+        return self.name
+
+
+@dataclass(frozen=True, slots=True)
+class Uses[T]:
+    """Dependency marker for a formula parameter. ``uses(term)`` records the graph
+    edge while leaving the parameter's ``pl.Expr`` type hint clean for authors."""
+
+    term: Term[T]
+
+
+def uses[T](term: Term[T]) -> Any:
+    """Mark a formula parameter as depending on ``term``.
+
+    Canonical formula style — the default carries the graph dependency, the type
+    hint describes what the body sees::
+
+        @g.formula(symbol="T")
+        def year_fraction(d: pl.Expr = uses(t.payment_days)) -> pl.Expr:
+            return d / 252.0
+    """
+    return Uses(term)
+
+
+def term_name(value: object) -> str:
+    """Resolve a dependency/mapping value to a column name: ``Uses``, ``Term``,
+    ``ColumnRef`` or plain string."""
+    if isinstance(value, Uses):
+        return value.term.name
+    if isinstance(value, Term):
+        return value.name
+    if isinstance(value, ColumnRef):
+        return value.name
+    if isinstance(value, str):
+        return value
+    raise TypeError(f"cannot use {value!r} as a term reference")
+
+
+@dataclass(frozen=True, slots=True)
+class ViewSpec:
+    """A named result *view*: the schema it satisfies and the column -> term map."""
+
+    name: str
+    schema: object | None
+    mapping: dict[str, str]
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,35 +121,141 @@ class GraphInfo:
     view_dtypes: dict[str, Any | None]
 
 
+class _Namespace:
+    """Attribute access over a graph's boundary terms of one kind."""
+
+    __slots__ = ("_graph", "_names", "_resolve")
+
+    def __init__(
+        self,
+        graph: FormulaGraph,
+        names: set[str] | None,
+        resolve: Callable[[str], Term[Any]],
+    ) -> None:
+        object.__setattr__(self, "_graph", graph)
+        object.__setattr__(self, "_names", names)
+        object.__setattr__(self, "_resolve", resolve)
+
+    def __getattr__(self, name: str) -> Term[Any]:
+        if name.startswith("_"):
+            raise AttributeError(name)
+        names = object.__getattribute__(self, "_names")
+        if names is not None and name not in names:
+            raise AttributeError(name)
+        return object.__getattribute__(self, "_resolve")(name)
+
+
 class FormulaGraph:
-    """A semantic formula DAG that compiles into Polars expressions.
+    """An open, typed, applicative pricing graph.
 
-    rustworkx owns the topology (cycle checks, topo order, ancestors); Polars
-    owns execution. Edge direction is dependency -> dependent.
+    Declare a graph over an input schema, name the market data it reads, and wire
+    its formulas with explicit term dependencies::
 
-    Declare formulas with the :meth:`formula` decorator, the market data they
-    read with :meth:`for_market`, and the named output column sets (*views*)
-    they expose with :meth:`returns`. ``compute(frame, view=...)`` then compiles
-    one view into a single lazy ``with_columns``.
+        g = FormulaGraph("generalized_call", input=OptionTrade)
+        t = g.input
+        m = g.market(
+            rate=CurveSpec("curves").value("zero_rate", indexer=t.id_indexador,
+                                           tenor=t.payment_days),
+            vol=VolSurfaceSpec("vol_surface").implied_vol(indexer=t.id_indexador,
+                                           tenor=t.payment_days, strike=t.strike),
+        )
+
+        @g.formula(symbol="T", latex=r"\\frac{d}{252}")
+        def year_fraction(d: pl.Expr = uses(t.payment_days)) -> pl.Expr:
+            return d / 252.0
+
+        g.returns("price", OptionPrice, option_id=t.option_id, price=call_price)
+
+    ``compute(frame, market=..., view="price")`` then compiles one view into a
+    single lazy ``with_columns``. The same declaration powers :meth:`explain`,
+    :meth:`info`, :meth:`to_mermaid` and :meth:`stage`.
     """
 
     def __init__(
         self,
         name: str,
         *,
-        returns: object | None = None,
-        view: str = "result",
+        input: type[Any] | None = None,
     ) -> None:
         self.name = name
         self._graph: rx.PyDiGraph = rx.PyDiGraph(multigraph=False)
-        self._indices: dict[str, int] = {}  # node name -> rustworkx index
-        self._input_aliases: dict[str, str] = {}  # dep name -> concrete node name
-        self._views: dict[str, dict[str, str]] = {}  # view -> {out_col: node_name}
+        self._indices: dict[str, int] = {}  # term name -> rustworkx index
+        self._input_aliases: dict[str, str] = {}  # dep name -> concrete term name
+        self._views: dict[str, dict[str, str]] = {}  # view -> {out_col: term_name}
+        self._view_schemas: dict[str, object | None] = {}
         self._market: list[MarketDependency] = []
-        if returns is not None:
-            self.returns(view, returns)
+        self._input_schema = input
+        self._input_names: set[str] | None = (
+            set(cast(Any, input).to_schema().columns.keys()) if input is not None else None
+        )
 
-    # ---- construction ----------------------------------------------------
+    # ---- boundary namespaces --------------------------------------------
+
+    @property
+    def input(self) -> _Namespace:
+        """Schema-derived input terms: ``g.input.spot`` returns a stable INPUT
+        term. Accessing an undeclared column raises ``AttributeError``."""
+        if self._input_schema is None:
+            raise AttributeError(
+                f"graph {self.name!r} has no input schema; build it with "
+                f"FormulaGraph(name, input=Schema)"
+            )
+        return _Namespace(self, self._input_names, self._input_term)
+
+    @property
+    def output(self) -> _Namespace:
+        """Output ports: any registered term, addressed by name. Used to bind a
+        downstream graph's inputs in :meth:`then`."""
+        return _Namespace(self, None, self._port_term)
+
+    def market(self, **reads: AttachableMarket) -> _Namespace:
+        """Declare market data as graph terms, naming each output by its keyword.
+
+        Each keyword becomes one MARKET term whose name *is* the output column the
+        read writes; the returned namespace exposes them (``m.rate``, ``m.vol``)
+        for use in :func:`uses` defaults::
+
+            m = g.market(
+                rate=CurveSpec("curves").value("zero_rate", indexer=t.id_indexador,
+                                               tenor=t.payment_days),
+                vol=VolSurfaceSpec("vol_surface").implied_vol(...),
+            )
+
+        A pre-built dependency that writes several columns at once (a multi-output
+        join) keeps its own output names; the keyword is then just a label and the
+        namespace exposes one term per output column.
+        """
+        produced: set[str] = set()
+        for keyword, read in reads.items():
+            if isinstance(read, MarketRead) or len(read.outputs) == 1:
+                dependency = finalize_market(read, keyword)
+            else:
+                dependency = read  # multi-output join keeps its own output names
+            self._market.append(dependency)
+            for output in dependency.outputs.values():
+                self._register_boundary(output, TermKind.MARKET)
+                produced.add(output)
+        return _Namespace(self, produced, self._port_term)
+
+    def _input_term(self, name: str) -> Term[Any]:
+        return self._register_boundary(name, TermKind.INPUT)
+
+    def _port_term(self, name: str) -> Term[Any]:
+        idx = self._indices.get(name)
+        if idx is None:
+            raise AttributeError(f"{name!r} is not a term in graph {self.name!r}")
+        return cast(Term[Any], self._graph[idx])
+
+    def _register_boundary(self, name: str, kind: TermKind) -> Term[Any]:
+        idx = self._indices.get(name)
+        if idx is None:
+            term = Term(name=name, kind=kind)
+            self._indices[name] = self._graph.add_node(term)
+            return term
+        existing = cast(Term[Any], self._graph[idx])
+        return existing
+
+    # ---- formula construction -------------------------------------------
 
     def formula(
         self,
@@ -95,45 +266,73 @@ class FormulaGraph:
         name: str | None = None,
         symbol: str | None = None,
         latex: str | None = None,
-    ) -> Callable[[FormulaFn], FormulaFn]:
-        """Decorator. Dependencies are inferred from the parameter names.
+    ) -> Callable[[FormulaFn], Term[Any]]:
+        """Decorator registering a FORMULA term and returning it.
 
-        ``latex`` is an optional math representation used purely for
-        introspection (``formula_of``, ``explain``, Mermaid labels); it never
-        affects execution.
+        Dependencies come from the parameter *defaults*: ``uses(term)`` or a bare
+        ``Term`` default. The returned term can itself feed later formulas::
+
+            @g.formula(symbol="d_2")
+            def d2(d1_: pl.Expr = uses(d1), sigma: pl.Expr = uses(m.vol)) -> pl.Expr:
+                return d1_ - sigma
+
+        ``latex`` is a pure-introspection label; it never affects execution.
         """
 
-        def register(fn: FormulaFn) -> FormulaFn:
-            self._register(
-                FormulaNode(
-                    name=name or fn.__name__,  # ty: ignore[unresolved-attribute]
-                    kind=NodeKind.FORMULA,
-                    deps=tuple(signature(fn).parameters),
-                    fn=fn,
-                    dtype=dtype,
-                    tags=tuple(tags),
-                    description=description,
-                    symbol=symbol,
-                    latex=latex,
-                )
+        def register(fn: FormulaFn) -> Term[Any]:
+            term_id = name or fn.__name__  # ty: ignore[unresolved-attribute]
+            term = Term(
+                name=term_id,
+                kind=TermKind.FORMULA,
+                deps=self._deps_from_signature(fn, term_id),
+                fn=fn,
+                dtype=dtype,
+                tags=tuple(tags),
+                description=description,
+                symbol=symbol,
+                latex=latex,
             )
-            return fn
+            self._register(term)
+            return term
 
         return register
 
-    def _register(self, node: FormulaNode) -> None:
-        if node.name in self._indices:
-            raise ValueError(f"node {node.name!r} already defined in graph {self.name!r}")
-        idx = self._graph.add_node(node)
-        self._indices[node.name] = idx
-        for dep in node.deps:
+    def _deps_from_signature(self, fn: FormulaFn, term_id: str) -> tuple[str, ...]:
+        deps: list[str] = []
+        for pname, param in signature(fn).parameters.items():
+            default = param.default
+            if isinstance(default, Uses):
+                deps.append(default.term.name)
+            elif isinstance(default, Term):
+                deps.append(default.name)
+            elif default is Parameter.empty:
+                raise ValueError(
+                    f"formula {term_id} parameter {pname!r} has no Term dependency.\n"
+                    f"Use {pname}: pl.Expr = uses(<term>), or pass a Term default."
+                )
+            else:
+                raise ValueError(
+                    f"formula {term_id} parameter {pname!r} has an unexpected default "
+                    f"{default!r}; use uses(<term>) or a bare Term"
+                )
+        return tuple(deps)
+
+    def _register(self, term: Term[Any]) -> None:
+        if term.name in self._indices and self._graph[self._indices[term.name]].fn is not None:
+            raise ValueError(f"term {term.name!r} already defined in graph {self.name!r}")
+        if term.name in self._indices:  # a boundary term promoted to a formula
+            self._graph[self._indices[term.name]] = term
+        else:
+            self._indices[term.name] = self._graph.add_node(term)
+        idx = self._indices[term.name]
+        for dep in term.deps:
             self._graph.add_edge(self._ensure_input(dep), idx, None)  # dep -> dependent
         self._validate_dag()
 
     def _ensure_input(self, name: str) -> int:
         idx = self._indices.get(name)
         if idx is None:
-            idx = self._graph.add_node(FormulaNode(name, NodeKind.INPUT))
+            idx = self._graph.add_node(Term(name, TermKind.INPUT))
             self._indices[name] = idx
         return idx
 
@@ -141,86 +340,62 @@ class FormulaGraph:
         if not rx.is_directed_acyclic_graph(self._graph):
             raise ValueError(f"cycle detected in graph {self.name!r}")
 
-    # ---- configuration (chainable) ---------------------------------------
-
-    def for_market(self, **reads: MarketDependency) -> FormulaGraph:
-        """Declare market data, naming each output column by its keyword.
-
-        Each keyword *is* the output column the read writes onto the frame: the
-        read is renamed to it via :meth:`MarketDependency.with_output`, so the
-        same spec can feed differently-named columns on different graphs::
-
-            graph.for_market(
-                rate=CURVES.value("zero_rate", indexer=OPT.id_indexador, ...),
-                vol=VOL.implied_vol(indexer=OPT.id_indexador, ...),
-            )
-
-        Multi-output joins cannot be renamed by keyword; attach them with
-        :meth:`uses_market`.
-        """
-        for output, read in reads.items():
-            self._market.append(read.with_output(output))
-        return self
-
-    def uses_market(self, *requirements: MarketDependency) -> FormulaGraph:
-        """Lower-level escape hatch: attach fully built market dependencies whose
-        output columns are already fixed."""
-        self._market.extend(requirements)
-        return self
-
-    def with_inputs(self, **aliases: str) -> FormulaGraph:
-        """Redirect a dependency name to a concrete node, e.g.
-        with_inputs(signed_cashflow="cdi_signed_cashflow")."""
-        self._input_aliases.update(aliases)
-        return self
-
     def returns(
         self,
         view: str,
         schema: object | None = None,
         /,
-        **overrides: str | ColumnRef,
+        **mapping: object,
     ) -> FormulaGraph:
-        """Name a set of output columns (a *view*): out_column -> node_name.
+        """Declare a result *view*: ``out_column -> term``.
 
-        Two forms:
-          returns("pricing", year_fraction="year_fraction", pv="leg_pv")
-          returns("pricing", LegPricing, pv="leg_pv")   # schema-driven
+        Values may be terms (canonical), ``uses(...)`` markers, ``ColumnRef``\\ s
+        or plain strings::
 
-        With a schema (any object exposing .to_schema().columns.keys(), e.g. a
-        Pandera DataFrameModel), each field maps identity to a node of the same
-        name; pass overrides only where the feeding node name differs. The
-        schema is duck-typed so the engine stays free of a Pandera dependency.
-        Override values may be plain names or :class:`ColumnRef`.
+            g.returns("price", OptionPrice, option_id=t.option_id, price=call_price)
+
+        With a ``schema`` (any object exposing ``.to_schema().columns.keys()``)
+        every field must be satisfied: pass it explicitly, or let an identically
+        named term fill it. Extra columns not in the schema are rejected.
         """
-        resolved = {col: col_name(node) for col, node in overrides.items()}
+        resolved = {col: term_name(value) for col, value in mapping.items()}
         if schema is not None:
-            typed_schema = cast(Any, schema)
-            fields = list(typed_schema.to_schema().columns.keys())
-            mapping = {f: resolved.get(f, f) for f in fields}
+            fields = list(cast(Any, schema).to_schema().columns.keys())
+            extra = sorted(set(resolved) - set(fields))
+            if extra:
+                raise ValueError(f"view {view!r} maps columns not in schema: {extra}")
+            full = {f: resolved.get(f, f) for f in fields}
         else:
-            mapping = resolved
-        self._views[view] = mapping
+            full = resolved
+        self._views[view] = full
+        self._view_schemas[view] = schema
         return self
 
-    # ---- composition -----------------------------------------------------
+    # ---- composition (open-graph semantics) -----------------------------
 
     @classmethod
-    def compose(cls, name: str, *graphs: FormulaGraph) -> FormulaGraph:
-        """Merge several graphs into a new one (inputs do not mutate).
+    def identity(cls, name: str = "identity") -> FormulaGraph:
+        """The empty graph: a unit for :meth:`then` and :meth:`merge`."""
+        return cls(name)
 
-        Two-pass build so registration order never matters: collect formulas,
-        then create input nodes for unresolved deps, then wire edges. An INPUT
-        in one graph satisfied by a FORMULA in another resolves correctly
-        because INPUT nodes are recreated, not collected. Two different
-        formulas under the same name is a hard conflict.
+    @classmethod
+    def compose(cls, name: str, *graphs: FormulaGraph) -> FormulaGraph:  # noqa: PLR0912
+        """Parallel composition: merge graphs in the same environment.
+
+        Formula terms are shared by name when identical and conflict when a name
+        names two different formulas. Boundary terms (input/market) are recreated,
+        so an INPUT in one graph satisfied by a FORMULA in another resolves. Views,
+        market reads and aliases carry through; a re-declared view must not
+        conflict.
         """
         merged = cls(name)
-        formulas: dict[str, FormulaNode] = {}
+        formulas: dict[str, Term[Any]] = {}
+        boundary_kinds: dict[str, TermKind] = {}
         for g in graphs:
             for idx in g._indices.values():
-                node = g._graph[idx]
-                if node.kind is not NodeKind.FORMULA:
+                node = cast(Term[Any], g._graph[idx])
+                if node.fn is None:
+                    boundary_kinds.setdefault(node.name, node.kind)
                     continue
                 prev = formulas.get(node.name)
                 if prev is not None and prev != node:
@@ -228,63 +403,66 @@ class FormulaGraph:
                 formulas[node.name] = node
             merged._input_aliases.update(g._input_aliases)
             merged._market.extend(g._market)
-            for view, mapping in g._views.items():  # carry views; a re-declared
-                existing = merged._views.setdefault(view, {})  # view must not conflict
-                for col, node_name in mapping.items():
-                    if existing.get(col, node_name) != node_name:
+            for view, mapping in g._views.items():
+                existing = merged._views.setdefault(view, {})
+                for col, tname in mapping.items():
+                    if existing.get(col, tname) != tname:
                         raise ValueError(
                             f"conflicting view column {view}.{col} in compose({name!r})"
                         )
-                    existing[col] = node_name
+                    existing[col] = tname
+                merged._view_schemas.setdefault(view, g._view_schemas.get(view))
 
-        for node in formulas.values():  # 1. formula nodes
-            merged._indices[node.name] = merged._graph.add_node(node)
-        for node in formulas.values():  # 2. inputs for unresolved deps
-            for dep in node.deps:
+        for term in formulas.values():  # 1. formula terms
+            merged._indices[term.name] = merged._graph.add_node(term)
+        for name_, kind in boundary_kinds.items():  # 2. boundary terms for deps
+            if name_ not in formulas:
+                merged._register_boundary(name_, kind)
+        for term in formulas.values():  # 3. inputs for any remaining deps
+            for dep in term.deps:
                 merged._ensure_input(dep)
-        for node in formulas.values():  # 3. edges dep -> dependent
-            for dep in node.deps:
-                merged._graph.add_edge(merged._indices[dep], merged._indices[node.name], None)
+        for term in formulas.values():  # 4. edges dep -> dependent
+            for dep in term.deps:
+                merged._graph.add_edge(merged._indices[dep], merged._indices[term.name], None)
         merged._validate_dag()
         return merged
 
-    def compose_with(self, *others: FormulaGraph, name: str | None = None) -> FormulaGraph:
-        """Ergonomic composition: ``a.compose_with(b, name="ab")`` merges ``a``
-        and ``b`` into a fresh graph (``self`` first), defaulting the new name to
-        ``self.name``."""
+    def merge(self, *others: FormulaGraph, name: str | None = None) -> FormulaGraph:
+        """Parallel composition of ``self`` with ``others`` (same environment)."""
         return type(self).compose(name or self.name, self, *others)
 
-    @classmethod
-    def assemble(
-        cls,
-        name: str,
-        *graphs: FormulaGraph,
-        market: Mapping[str, MarketDependency] | None = None,
-        fixed_market: tuple[MarketDependency, ...] = (),
-        schema: object | None = None,
-        view: str = "pricing",
-    ) -> FormulaGraph:
-        """One verb for the ``compose → for_market → returns`` assembly recipe.
+    def extend(self, *others: FormulaGraph, name: str | None = None) -> FormulaGraph:
+        """Same-environment formula extension — add formula blocks that read the
+        same inputs/market. The common case for layering Greeks onto a price."""
+        return type(self).compose(name or self.name, self, *others)
 
-        Merge ``graphs`` (their views carry through :meth:`compose`), attach the
-        ``market`` reads (named by keyword) and any ``fixed_market`` multi-output
-        joins, and publish ``view`` from ``schema``. This is the single way every
-        instrument graph is built — swap legs, forwards, energy — so the recipe is
-        stated once instead of re-spelled per instrument.
+    def compose_with(self, *others: FormulaGraph, name: str | None = None) -> FormulaGraph:
+        """Friendly alias for :meth:`extend` / :meth:`merge`."""
+        return type(self).compose(name or self.name, self, *others)
+
+    def then(
+        self,
+        other: FormulaGraph,
+        *,
+        bind: Mapping[Term[Any], Term[Any]] | None = None,
+        name: str | None = None,
+    ) -> FormulaGraph:
+        """Sequential composition by ports: feed ``self``'s outputs into ``other``'s
+        inputs. ``bind`` maps each downstream input term to the upstream term that
+        supplies it::
+
+            priced = payoff.then(discounting,
+                                 bind={discounting.input.future_value: payoff.output.future_value})
         """
-        graph = cls.compose(name, *graphs)
-        if market:
-            graph.for_market(**market)
-        if fixed_market:
-            graph.uses_market(*fixed_market)
-        if schema is not None:
-            graph.returns(view, schema)
-        return graph
+        merged = type(self).compose(name or self.name, self, other)
+        for target, source in (bind or {}).items():
+            merged._input_aliases[term_name(target)] = term_name(source)
+        merged._validate_dag()
+        return merged
 
     # ---- compilation -----------------------------------------------------
 
     def _resolve(self, name: str) -> str:
-        """Follow the input-alias chain to the concrete node name."""
         seen: set[str] = set()
         while (
             name in self._input_aliases and self._input_aliases[name] != name and name not in seen
@@ -299,33 +477,27 @@ class FormulaGraph:
         provided: Mapping[str, pl.Expr] | None = None,
         _cache: dict[str, pl.Expr] | None = None,
     ) -> pl.Expr:
-        """Recursively compile `target` into one nested pl.Expr."""
+        """Recursively compile ``target`` into one nested ``pl.Expr``."""
         cache = _cache if _cache is not None else {}
         if target in cache:
             return cache[target]
-
-        # 1. explicit override
         if provided and target in provided:
             return cache.setdefault(target, provided[target])
-
-        # 2. input alias (signed_cashflow -> cdi_signed_cashflow)
         alias = self._input_aliases.get(target)
         if alias is not None and alias != target:
             return cache.setdefault(target, self.expr(alias, provided, cache))
-
-        # 3 + 4. resolve node
         idx = self._indices.get(target)
         if idx is None:
             raise KeyError(
-                f"{target!r} is not a node in graph {self.name!r}; "
-                f"known nodes: {sorted(self._indices)}"
+                f"{target!r} is not a term in graph {self.name!r}; "
+                f"known terms: {sorted(self._indices)}"
             )
-        node = self._graph[idx]
-        if node.fn is None:  # input column
+        term = cast(Term[Any], self._graph[idx])
+        if term.fn is None:  # boundary column
             result = pl.col(target)
-        else:  # formula
-            args = [self.expr(dep, provided, cache) for dep in node.deps]
-            result = node.fn(*args)
+        else:
+            args = [self.expr(dep, provided, cache) for dep in term.deps]
+            result = term.fn(*args)
         cache[target] = result
         return result
 
@@ -337,16 +509,13 @@ class FormulaGraph:
         outputs: Mapping[str, str] | None = None,
         view: str | None = None,
     ) -> pl.LazyFrame:
-        """Attach market data (if required), compile each output to a nested
-        expression, add them with one with_columns. Stays lazy.
-
-        Pass a named ``view`` (declared via :meth:`returns`) or, as an escape
-        hatch, an explicit ``outputs`` mapping of out_column -> node_name.
-        """
+        """Interpret the graph as lazy Polars: attach market data, compile each
+        view column to a nested expression, add them with one ``with_columns``.
+        Stays lazy."""
         frame = self._attach_market(frame, market)
         mapping = self._resolve_view(outputs, view)
         frame = self._with_missing_inputs(frame, mapping.values())
-        cache: dict[str, pl.Expr] = {}  # share intermediates across outputs
+        cache: dict[str, pl.Expr] = {}
         columns = [self.expr(node, _cache=cache).alias(col) for col, node in mapping.items()]
         return frame.with_columns(columns)
 
@@ -358,13 +527,10 @@ class FormulaGraph:
         view: str | None = None,
         targets: list[str] | None = None,
     ) -> pl.LazyFrame:
-        """Analysis mode: materialize every intermediate node as its own column.
-        Wider/slower than compute, but every step is inspectable. Stays lazy.
-
-        Debug workflow: graph.stage(...).collect().null_count() -- nulls
-        propagate, so the first column that is unexpectedly null is the root
-        cause (e.g. null zero_rate => failed curve join).
-        """
+        """Staged-debug interpretation: materialize every intermediate term as its
+        own column. Wider/slower than :meth:`compute`, but every step is
+        inspectable (nulls propagate, so the first unexpectedly-null column is the
+        root cause). Stays lazy."""
         frame = self._attach_market(frame, market)
         if targets is None:
             if view is None:
@@ -374,15 +540,15 @@ class FormulaGraph:
         order: list[str] = []
         seen: set[str] = set()
 
-        def emit(name: str) -> None:  # post-order over RESOLVED deps
+        def emit(name: str) -> None:
             real = self._resolve(name)
             if real in seen:
                 return
             seen.add(real)
-            node = self._graph[self._indices[real]]
-            if node.fn is None:  # input column, already present
+            term = cast(Term[Any], self._graph[self._indices[real]])
+            if term.fn is None:
                 return
-            for dep in node.deps:
+            for dep in term.deps:
                 emit(dep)
             order.append(real)
 
@@ -390,9 +556,10 @@ class FormulaGraph:
             emit(t)
 
         for name in order:
-            node = self._graph[self._indices[name]]
-            cols = [pl.col(self._resolve(d)) for d in node.deps]
-            frame = frame.with_columns(node.fn(*cols).alias(name))
+            term = cast(Term[Any], self._graph[self._indices[name]])
+            cols = [pl.col(self._resolve(d)) for d in term.deps]
+            assert term.fn is not None
+            frame = frame.with_columns(term.fn(*cols).alias(name))
         return frame
 
     def _attach_market(self, lf: pl.LazyFrame, market: MarketSnapshot | None) -> pl.LazyFrame:
@@ -408,7 +575,7 @@ class FormulaGraph:
             dep
             for target in targets
             for dep in self.dependencies_of(target) | {target}
-            if self._graph[self._indices[dep]].kind is NodeKind.INPUT
+            if self._graph[self._indices[dep]].fn is None
         }
         if not required:
             return lf
@@ -426,7 +593,15 @@ class FormulaGraph:
                 return dict(self._views[view])
             except KeyError:
                 raise KeyError(f"no view {view!r} in graph {self.name!r}") from None
-        raise ValueError("pass outputs={...} or view=...")
+        raise ValueError("pass view=...")
+
+    # ---- shared computation interface -----------------------------------
+
+    def has_view(self, view: str) -> bool:
+        return view in self._views
+
+    def view_schema(self, view: str) -> object | None:
+        return self._view_schemas.get(view)
 
     # ---- introspection ---------------------------------------------------
 
@@ -434,37 +609,50 @@ class FormulaGraph:
         names = {i: self._graph[i].name for i in self._indices.values()}
         return [(names[a], names[b]) for a, b in self._graph.edge_list()]
 
-    def dependencies_of(self, target: str) -> set[str]:
-        idx = self._indices[target]
+    def dependencies_of(self, target: str | Term[Any]) -> set[str]:
+        idx = self._indices[term_name(target)]
         return {self._graph[i].name for i in rx.ancestors(self._graph, idx)}
 
     def topological_order(self) -> list[str]:
         return [self._graph[i].name for i in rx.topological_sort(self._graph)]
 
-    def describe(self, target: str) -> str:
-        node = self._graph[self._indices[target]]
+    def describe(self, target: str | Term[Any]) -> str:
+        term = cast(Term[Any], self._graph[self._indices[term_name(target)]])
         return (
-            f"{node.name} [{node.kind}] tags={node.tags or '()'}\n"
-            f"  deps: {', '.join(node.deps) or '-'}\n"
-            f"  {node.description or ''}"
+            f"{term.name} [{term.kind}] tags={term.tags or '()'}\n"
+            f"  deps: {', '.join(term.deps) or '-'}\n"
+            f"  {term.description or ''}"
         ).rstrip()
 
-    def formula_of(self, target: str) -> str:
-        node = self._graph[self._indices[target]]
-        if node.kind is NodeKind.INPUT:
-            return node.symbol or node.name
-        lhs = node.symbol or node.name
-        if node.latex:
-            return f"{lhs} = {node.latex}"
-        deps = ", ".join(node.deps)
-        return f"{lhs} = \\operatorname{{{node.name}}}({deps})"
+    def formula_of(self, target: str | Term[Any]) -> str:
+        term = cast(Term[Any], self._graph[self._indices[term_name(target)]])
+        if term.fn is None:
+            return term.symbol or term.name
+        lhs = term.symbol or term.name
+        if term.latex:
+            return f"{lhs} = {term.latex}"
+        deps = ", ".join(term.deps)
+        return f"{lhs} = \\operatorname{{{term.name}}}({deps})"
 
     def formulas(self) -> dict[str, str]:
         return {
             name: self.formula_of(name)
             for name, idx in self._indices.items()
-            if self._graph[idx].kind is NodeKind.FORMULA
+            if self._graph[idx].kind is TermKind.FORMULA
         }
+
+    def _market_outputs(self) -> set[str]:
+        return {out for req in self._market for out in req.outputs.values()}
+
+    def _kind_of(self, name: str, market_outputs: set[str]) -> str:
+        if name in market_outputs:
+            return "market"
+        kind = self._graph[self._indices[name]].kind
+        if kind is TermKind.FORMULA:
+            return "formula"
+        if kind is TermKind.MARKET:
+            return "market"
+        return "input"
 
     def to_mermaid(
         self,
@@ -473,7 +661,10 @@ class FormulaGraph:
         show_kinds: bool = False,
         view: str | None = None,
     ) -> str:
+        """Interpret the graph as a Mermaid flowchart, distinguishing input,
+        market, formula and view/output terms."""
         view_nodes = set(self._views.get(view, {}).values()) if view else set()
+        market_outputs = self._market_outputs()
 
         def label(name: str) -> str:
             if not math_labels:
@@ -487,16 +678,8 @@ class FormulaGraph:
             else:
                 lines.append(f"    {a} --> {b}")
         if show_kinds:
-            market_outputs = {out for req in self._market for out in req.outputs.values()}
-            for name, idx in self._indices.items():
-                node = self._graph[idx]
-                classes = []
-                if node.kind is NodeKind.INPUT:
-                    classes.append("input")
-                else:
-                    classes.append("formula")
-                if name in market_outputs:
-                    classes.append("market")
+            for name in self._indices:
+                classes = [self._kind_of(name, market_outputs)]
                 if name in view_nodes:
                     classes.append("output")
                 for cls in classes:
@@ -509,29 +692,36 @@ class FormulaGraph:
         formula_nodes = tuple(
             name
             for name in self.topological_order()
-            if self._graph[self._indices[name]].kind is NodeKind.FORMULA
+            if self._graph[self._indices[name]].kind is TermKind.FORMULA
         )
         return GraphInfo(
             name=self.name,
             required_inputs=tuple(sorted(self.required_inputs())),
             market_inputs=tuple(sorted({k for req in self._market for k in req.left_keys})),
-            market_outputs=tuple(
-                sorted({out for req in self._market for out in req.outputs.values()})
-            ),
+            market_outputs=tuple(sorted(self._market_outputs())),
             formula_nodes=formula_nodes,
             intermediate_nodes=tuple(name for name in formula_nodes if name not in selected),
             view_nodes=view_nodes,
             view_dtypes=self.view_dtypes(view) if view else {},
         )
 
+    def _market_report(self) -> list[str]:
+        lines: list[str] = []
+        for req in self._market:
+            keys = ", ".join(req.left_keys)
+            for out in req.outputs.values():
+                lines.append(f"  - {out} <- {req.table}({keys})")
+        return lines
+
     def explain(self, target: str | None = None, *, view: str | None = None) -> str:
+        """Interpret the graph as explanation text: its inputs, market reads,
+        formula path and returns."""
         if target is None and view is None:
             raise ValueError("pass target=... or view=...")
         if target is not None:
             targets = [target]
         else:
-            if view is None:
-                raise ValueError("pass target=... or view=...")
+            assert view is not None
             targets = list(self._views[view].values())
         needed = set(targets)
         for item in targets:
@@ -539,17 +729,33 @@ class FormulaGraph:
         path = [
             name
             for name in self.topological_order()
-            if name in needed and self._graph[self._indices[name]].kind is NodeKind.FORMULA
+            if name in needed and self._graph[self._indices[name]].kind is TermKind.FORMULA
         ]
         info = self.info(view=view)
-        lines = [f"Graph: {self.name}"]
-        lines.append("Required inputs: " + (", ".join(info.required_inputs) or "-"))
-        lines.append("Market outputs: " + (", ".join(info.market_outputs) or "-"))
-        lines.append("Formula path:")
+        lines = [f"FormulaGraph {self.name}"]
+        if view is not None:
+            schema = self._view_schemas.get(view)
+            sname = getattr(schema, "__name__", None)
+            lines.append("")
+            lines.append("View:")
+            lines.append(f"  - {view}" + (f" -> {sname}" if sname else ""))
+        lines.append("")
+        lines.append("Inputs: " + (", ".join(info.required_inputs) or "-"))
+        market = self._market_report()
+        lines.append("")
+        lines.append("Market reads:")
+        lines.extend(market or ["  - (none)"])
+        lines.append("")
+        lines.append("Formulas:")
         for name in path:
             desc = self._graph[self._indices[name]].description
             suffix = f"  # {desc}" if desc else ""
             lines.append(f"  - {self.formula_of(name)}{suffix}")
+        if view is not None:
+            lines.append("")
+            lines.append("Returns:")
+            for col, tname in self._views[view].items():
+                lines.append(f"  - {col} <- {tname}")
         return "\n".join(lines)
 
     def validate_view(self, view: str, schema: object) -> None:
@@ -560,20 +766,17 @@ class FormulaGraph:
             raise ValueError(f"view {view!r} is missing schema fields: {missing}")
         unknown = sorted(node for node in mapping.values() if node not in self._indices)
         if unknown:
-            raise ValueError(f"view {view!r} maps to unknown nodes: {unknown}")
+            raise ValueError(f"view {view!r} maps to unknown terms: {unknown}")
 
     def required_inputs(self) -> set[str]:
-        """The columns a caller must supply: leaf INPUT nodes, minus what market
-        requirements provide, minus aliased dep names, plus market join keys.
-        Derived from the graph itself, so it cannot drift from the formulas."""
+        """The columns a caller must supply: leaf boundary terms, minus what market
+        reads provide and aliases redirect, plus market join keys."""
         graph_inputs = {n for n, i in self._indices.items() if self._graph[i].fn is None}
-        market_provided = {out for req in self._market for out in req.outputs.values()}
+        market_provided = self._market_outputs()
         market_keys = {k for req in self._market for k in req.left_keys}
         return (graph_inputs - market_provided - set(self._input_aliases)) | market_keys
 
     def view_dtypes(self, view: str) -> dict[str, Any | None]:
-        """{output_column: declared node dtype} for a view — a cheap contract
-        derived from the stored node dtypes."""
         return {
             col: self._graph[self._indices[node]].dtype for col, node in self._views[view].items()
         }

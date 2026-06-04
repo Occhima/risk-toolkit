@@ -8,11 +8,14 @@
 
 </div>
 
-Schenberg is a Python pricing toolkit built on lazy [Polars](https://pola.rs)
-dataframes, [Pandera](https://pandera.readthedocs.io) boundary schemas, and a
-small graph engine (`rustworkx`) for composable pricing formulas. You describe a
-price as a DAG of row-local formulas; the engine compiles it into a single lazy
-expression and never collects until you ask.
+Schenberg is a lazy, contract-oriented pricing DSL built on lazy
+[Polars](https://pola.rs) dataframes, [Pandera](https://pandera.readthedocs.io)
+boundary schemas, and a small graph engine (`rustworkx`). Inputs, market reads
+and formulas are **Terms** inside a **FormulaGraph**; the `MarketSnapshot` is the
+environment supplied at compute time. The same graph declaration can be
+interpreted as lazy Polars, a Mermaid diagram, explanation text, or debug stages,
+and never collects until you ask. A `Router` is a contract-oriented choice among
+pricing graphs; a `Workflow` handles shape-changing dataframe stages.
 
 ```python
 from datetime import date
@@ -54,18 +57,18 @@ A full, runnable version of this is [`examples/01_price_a_swap.py`](examples/01_
 
 ## Why a graph
 
-- **Declarative formulas.** A formula's parameter names *are* its dependencies —
-  no manual wiring. The engine handles topological order, cycle checks, and a
-  shared compile cache.
+- **Terms, explicitly wired.** A formula names its dependencies with `uses(term)`;
+  the engine handles topological order, cycle checks, and a shared compile cache.
 - **Lazy by construction.** Nothing in the engine calls `.collect()`; a whole
   pricing run is one Polars query you execute once, at the edge.
-- **Composable.** `compose_with()` merges graphs; `Router` dispatches heterogeneous
-  instruments; `MarketSnapshot` attaches curves/fixings/FX by declarative joins.
+- **Composable.** `merge` / `extend` / `then` compose graphs as open graphs;
+  `Router` is a contract-oriented choice among them; `MarketSnapshot` is the
+  environment that supplies curves/fixings/FX/vol by declarative joins.
 - **Typed at the boundary, fast inside.** Pandera contracts guard the public
   edges; the hot path stays plain Polars expressions.
-- **Inspectable.** `dependencies_of`, `required_inputs`, `to_mermaid`, and a
-  `stage()` mode that materializes every intermediate for null-propagation
-  debugging.
+- **One declaration, many interpretations.** `explain`, `info`, `to_mermaid`, and
+  a `stage()` mode that materializes every intermediate for null-propagation
+  debugging — all derived from the same graph, so they can't drift.
 
 ## What's included
 
@@ -93,7 +96,7 @@ just check                  # lint + typecheck + test
 
 | Doc | What |
 |-----|------|
-| [docs/concepts.md](docs/concepts.md) | The mental model: `FormulaGraph`, `Router`, `MarketSnapshot`, `Workflow`, and the Router-vs-data rule. |
+| [docs/concepts.md](docs/concepts.md) | The mental model: `Term`, `FormulaGraph`, `Router` as ArrowChoice, `MarketSnapshot` as the Reader environment, `Workflow`, and the Router-vs-data rule. |
 | [docs/extending.md](docs/extending.md) | How to add a custom instrument, index, or payoff variant. |
 | [examples/](examples/) | Runnable, self-contained scripts. |
 
@@ -102,7 +105,7 @@ just check                  # lint + typecheck + test
 ```text
 schenberg/
   domain/            Pandera boundary schemas + enums
-  core/              FormulaGraph, Router, MarketRequirement, Workflow
+  core/              Term, FormulaGraph, Router, MarketRead, Workflow
   market_data/       MarketSnapshot, sources, curve specs, shocks, calendar
   pricing/
     api.py           public pricing facade

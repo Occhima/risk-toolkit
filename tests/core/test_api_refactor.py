@@ -1,159 +1,45 @@
-"""Coverage for the domain-oriented public API: FormulaGraph/Router/Workflow."""
+"""Public-API surface: column helpers, market specs, Router sugar, Workflow."""
 
 from __future__ import annotations
 
-from datetime import date
 from typing import cast
 
 import polars as pl
 import pytest
 from schenberg.core.columns import ColumnLike, ColumnRef, col_name, cols
-from schenberg.core.graph import FormulaGraph
-from schenberg.core.market import MarketRequirement
+from schenberg.core.market import MarketRead, MarketRequirement
 from schenberg.core.pipeline import Workflow
 from schenberg.core.router import Router
 from schenberg.domain.schemas.option import OptionPrice
 from schenberg.market_data.curves import CurveSpec
-from schenberg.market_data.snapshot import MarketSnapshot
-from schenberg.market_data.sources import MarketSource
 from schenberg.market_data.volatility import VolSurfaceSpec
-
-
-def _curve_market() -> MarketSnapshot:
-    return MarketSnapshot.from_sources(
-        as_of=date(2026, 6, 3),
-        sources=[
-            MarketSource(
-                "curves",
-                pl.DataFrame({"id_indexador": [1], "tenor_days": [252], "zero_rate": [0.1]}).lazy(),
-            )
-        ],
-    )
-
-
-def test_constructor_returns_and_view_sugar() -> None:
-    graph = FormulaGraph("sugar", returns=OptionPrice, view="public")
-
-    # The constructor sugar declares a view mapping each schema field to a
-    # node of the same name (identity).
-    assert graph._views["public"] == {f: f for f in OptionPrice.to_schema().columns}
 
 
 def test_column_like_helpers() -> None:
     assert col_name("x") == "x"
     assert col_name(ColumnRef("y")) == "y"
-    # ColumnLike accepts both forms.
     accepts: ColumnLike = ColumnRef("z")
     assert col_name(accepts) == "z"
 
 
-def test_returns_accepts_column_ref_override() -> None:
-    graph = FormulaGraph("ovr")
-
-    @graph.formula()
-    def call_price(spot: pl.Expr) -> pl.Expr:
-        return spot
-
-    # A ColumnRef override value is resolved to its .name (the feeding node).
-    graph.returns("price", price=ColumnRef("call_price"))
-    assert graph._views["price"] == {"price": "call_price"}
-    out = cast(
-        pl.DataFrame,
-        graph.compute(pl.DataFrame({"spot": [3.0]}).lazy(), view="price").collect(),
-    )
-    expected_price = 3.0
-    assert out["price"].item() == expected_price
-
-
-def test_for_market_finalizes_output_from_kwarg_and_view_dtypes() -> None:
-    graph = FormulaGraph("mkt")
-
-    @graph.formula(dtype=pl.Float64)
-    def pv(rate: pl.Expr) -> pl.Expr:
-        return rate * 2.0
-
-    graph.for_market(rate=CurveSpec("curves").value("zero_rate")).returns("pricing", pv="pv")
-
-    out = cast(
-        pl.DataFrame,
-        graph.compute(
-            pl.DataFrame({"id_indexador": [1], "payment_days": [252]}).lazy(),
-            market=_curve_market(),
-            view="pricing",
-        ).collect(),
-    )
-    assert out["pv"].item() == pytest.approx(0.2)
-    assert graph.view_dtypes("pricing") == {"pv": pl.Float64}
-
-
-def test_for_market_renames_output_to_keyword() -> None:
-    # for_market always names the output column by its keyword, even when the
-    # read already carries a (default) output. The same spec can feed columns
-    # under different names on different graphs.
-    graph = FormulaGraph("mkt2")
+def test_curve_spec_returns_market_read_when_output_omitted() -> None:
+    read = CurveSpec("curves").value("zero_rate", indexer="id_indexador", tenor="payment_days")
+    # Omitting output yields a delayed MarketRead; g.market names the column.
+    assert isinstance(read, MarketRead)
+    assert read.as_output("rate").outputs == {"zero_rate": "rate"}
+    # With an explicit output it is the concrete requirement.
     fixed = CurveSpec("curves").value("zero_rate", output="rate")
     assert isinstance(fixed, MarketRequirement)
-    graph.for_market(zero_rate=fixed)
-    assert graph._market[0].outputs == {"zero_rate": "zero_rate"}
+    assert fixed.outputs == {"zero_rate": "rate"}
 
 
-def test_curve_spec_defaults_output_to_value_col_when_omitted() -> None:
-    read = CurveSpec("curves").value("zero_rate", indexer="id_indexador", tenor="payment_days")
-    assert isinstance(read, MarketRequirement)
-    assert read.outputs == {"zero_rate": "zero_rate"}
-    # for_market renames it; with_output is the underlying rename verb.
-    assert read.with_output("rate").outputs == {"zero_rate": "rate"}
-
-
-def test_vol_surface_spec_defaults_output_to_value_col_when_omitted() -> None:
+def test_vol_surface_spec_returns_market_read_when_output_omitted() -> None:
     OPT = cols(OptionPrice)  # any schema; just exercising ColumnLike
     read = VolSurfaceSpec("vol_surface").implied_vol(
         indexer=ColumnRef("id_indexador"), tenor="payment_days", strike=OPT.price
     )
-    assert read.outputs == {"implied_vol": "implied_vol"}
-    assert read.with_output("vol").outputs == {"implied_vol": "vol"}
-
-
-def test_compose_with_merges_formulas() -> None:
-    base = FormulaGraph("base")
-
-    @base.formula()
-    def a(x: pl.Expr) -> pl.Expr:
-        return x + 1
-
-    other = FormulaGraph("other")
-
-    @other.formula()
-    def b(a: pl.Expr) -> pl.Expr:
-        return a * 2
-
-    merged = base.compose_with(other, name="merged")
-    assert merged.name == "merged"
-    assert set(merged.formulas()) == {"a", "b"}
-    out = cast(
-        pl.DataFrame,
-        merged.compute(pl.DataFrame({"x": [1.0]}).lazy(), outputs={"b": "b"}).collect(),
-    )
-    expected_b = 4.0
-    assert out["b"].item() == expected_b
-
-
-def test_stage_materializes_intermediates_for_a_view() -> None:
-    graph = FormulaGraph("staged")
-
-    @graph.formula()
-    def step(x: pl.Expr) -> pl.Expr:
-        return x + 1
-
-    @graph.formula()
-    def out(step: pl.Expr) -> pl.Expr:
-        return step * 10
-
-    graph.returns("v", out="out")
-    staged = cast(pl.DataFrame, graph.stage(pl.DataFrame({"x": [1.0]}).lazy(), view="v").collect())
-    expected_step, expected_out = 2.0, 20.0
-    assert staged["step"].item() == expected_step
-    assert staged["out"].item() == expected_out
+    assert isinstance(read, MarketRead)
+    assert read.as_output("vol").outputs == {"implied_vol": "vol"}
 
 
 def test_router_on_case_and_when() -> None:
@@ -165,6 +51,12 @@ def test_router_on_case_and_when() -> None:
 
         def compute(self, frame, *, market=None, view="result"):
             return frame.with_columns(pl.lit(self.marker).alias("by"))
+
+        def has_view(self, view: str) -> bool:
+            return True
+
+        def view_schema(self, view: str) -> object | None:
+            return None
 
     router = Router.on(SCHEMA.instrument_type)
 

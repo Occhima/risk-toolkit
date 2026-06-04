@@ -10,11 +10,13 @@ declaration idiom used by the option graphs.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import overload
 
 import pandera.polars as pa
 from pandera.typing.polars import LazyFrame
 
 from schenberg.core.columns import ColumnLike
+from schenberg.core.market import MarketRead
 from schenberg.domain.schemas.market_data import VolSurfaceContract
 from schenberg.market_data.interpolated import InterpolatedRequirement, InterpolatedSpec
 from schenberg.market_data.sources import MarketSource
@@ -22,7 +24,35 @@ from schenberg.market_data.sources import MarketSource
 
 @dataclass(frozen=True, slots=True)
 class VolSurfaceSpec:
+    """An implied-vol surface read, grouped by ``id_indexador`` and bilinearly
+    interpolated over ``(tenor_days, strike)``.
+
+    With ``output`` omitted it returns a delayed :class:`MarketRead` that
+    ``g.market(vol=...)`` names from its keyword; with ``output`` given it returns
+    the concrete :class:`InterpolatedRequirement`.
+    """
+
     name: str = "vol_surface"
+
+    @overload
+    def implied_vol(
+        self,
+        *,
+        indexer: ColumnLike = ...,
+        tenor: ColumnLike = ...,
+        strike: ColumnLike = ...,
+        output: None = ...,
+    ) -> MarketRead: ...
+
+    @overload
+    def implied_vol(
+        self,
+        *,
+        indexer: ColumnLike = ...,
+        tenor: ColumnLike = ...,
+        strike: ColumnLike = ...,
+        output: str,
+    ) -> InterpolatedRequirement: ...
 
     def implied_vol(
         self,
@@ -31,8 +61,10 @@ class VolSurfaceSpec:
         tenor: ColumnLike = "payment_days",
         strike: ColumnLike = "strike",
         output: str | None = None,
-    ) -> InterpolatedRequirement:
+    ) -> InterpolatedRequirement | MarketRead:
         spec = InterpolatedSpec(self.name, axes=("tenor_days", "strike"))
+        if output is None:
+            return spec.value("implied_vol", on=(tenor, strike), group_col=indexer)
         return spec.value("implied_vol", output=output, on=(tenor, strike), group_col=indexer)
 
 

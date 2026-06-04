@@ -1,7 +1,7 @@
 """Option Greeks — three backends behind one contract.
 
-* ``CLOSED_FORM`` is graph-native: :data:`bsm_greeks_graph` composes onto the
-  option pricing graph and the Greeks fall out as ordinary Polars expressions
+* ``CLOSED_FORM`` is graph-native: :func:`bsm_greeks_terms` registers the Greeks
+  onto the option pricing graph and they fall out as ordinary Polars expressions
   (no Python callback). This is what the option pricer uses by default.
 * ``NUMERIC`` and ``AUTODIFF`` cannot be Polars expressions (they bump / reverse-
   mode differentiate the numpy price model), so :class:`GreeksEngine` bridges the
@@ -29,13 +29,14 @@ from schenberg.math.black_scholes import (
     greeks_autodiff,
     greeks_numeric,
 )
-from schenberg.risk.greeks.graph import bsm_greeks_graph
+from schenberg.risk.greeks.graph import GreekTerms, bsm_greeks_terms
 
 __all__ = [
     "GREEK_NAMES",
+    "GreekTerms",
     "GreeksBackend",
     "GreeksEngine",
-    "bsm_greeks_graph",
+    "bsm_greeks_terms",
 ]
 
 _KERNELS = {

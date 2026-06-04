@@ -10,6 +10,8 @@ from schenberg.domain.schemas import ForwardTrade
 
 
 class MarkerPricer:
+    """A minimal contract-free computation used to exercise plain routing."""
+
     def __init__(self, marker: str) -> None:
         self.marker = marker
 
@@ -21,6 +23,12 @@ class MarkerPricer:
         view: str = "result",
     ) -> pl.LazyFrame:
         return frame.with_columns(pl.lit(self.marker).alias("priced_by"))
+
+    def has_view(self, view: str) -> bool:
+        return True
+
+    def view_schema(self, view: str) -> object | None:
+        return None
 
 
 def test_fallback_receives_all_rows_when_no_cases() -> None:

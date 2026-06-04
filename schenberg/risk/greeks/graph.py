@@ -1,113 +1,132 @@
-"""Closed-form generalized-BSM Greeks, as a composable :class:`FormulaGraph`.
+"""Closed-form generalized-BSM Greeks, as :class:`Term` builders.
 
-The Greeks are their own graph. Every node names the term it needs — ``d1``,
-``carry_spot``, ``vol`` — and :meth:`FormulaGraph.compose` wires those names to the
-producing nodes of :data:`generalized_bsm_core` when the two graphs are merged
-(see :mod:`schenberg.pricing.instruments.option.models`). So this module never
-imports the option core: it only declares the sensitivities and lets composition
-supply the pricing terms.
+The Greeks are ordinary graph terms: each one names the price terms it needs —
+``d1``, ``carry_spot``, ``vol`` — and is registered onto the *same* option graph
+as the price (see :mod:`schenberg.pricing.instruments.option.models`), so the
+sensitivities fall out as plain Polars expressions with no Python callback.
 
-The partials are taken wrt the *same* independent variables as the numeric and
-autodiff backends in :mod:`schenberg.math.black_scholes` (``rho = dV/dr`` at
-fixed carry ``b``, ``theta = -dV/dT``), so the three reconcile. ``eta`` is +1 for
-a call, -1 for a put, derived from ``option_kind`` so one graph serves both.
+The partials are taken wrt the same independent variables as the numeric and
+autodiff backends in :mod:`schenberg.math.black_scholes` (``rho = dV/dr`` at fixed
+carry ``b``, ``theta = -dV/dT``), so the three reconcile. ``eta`` is +1 for a
+call, -1 for a put, derived from ``option_kind`` so one builder serves both.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import polars as pl
 
-from schenberg.core.graph import FormulaGraph
+from schenberg.core.graph import FormulaGraph, Term, uses
 from schenberg.domain.enums import OptionKind
-from schenberg.domain.schemas.option import OptionGreeks
 from schenberg.math.expressions import norm_cdf_expr, norm_pdf_expr
 
-bsm_greeks_graph = FormulaGraph("bsm_greeks")
+
+@dataclass(frozen=True, slots=True)
+class GreekTerms:
+    delta: Term[float]
+    gamma: Term[float]
+    vega: Term[float]
+    theta: Term[float]
+    rho: Term[float]
 
 
-@bsm_greeks_graph.formula(tags=("greeks",), description="Call/put sign: +1 call, -1 put.")
-def eta(option_kind: pl.Expr) -> pl.Expr:
-    return pl.when(option_kind == OptionKind.CALL.value).then(1.0).otherwise(-1.0)
+def bsm_greeks_terms(
+    g: FormulaGraph,
+    *,
+    option_kind: Term[str],
+    spot: Term[float],
+    strike: Term[float],
+    rate: Term[float],
+    cost_of_carry: Term[float],
+    vol: Term[float],
+    year_fraction: Term[float],
+    d1: Term[float],
+    d2: Term[float],
+    carry_spot: Term[float],
+    disc_strike: Term[float],
+) -> GreekTerms:
+    """Register the five closed-form Greek terms onto ``g`` and return them."""
 
+    @g.formula(tags=("greeks",), description="Call/put sign: +1 call, -1 put.")
+    def eta(kind: pl.Expr = uses(option_kind)) -> pl.Expr:
+        return pl.when(kind == OptionKind.CALL.value).then(1.0).otherwise(-1.0)
 
-@bsm_greeks_graph.formula(
-    tags=("greeks",), description="Carry discount e^{(b-r)T} = carry_spot / S."
-)
-def carry_discount(carry_spot: pl.Expr, spot: pl.Expr) -> pl.Expr:
-    return carry_spot / spot
+    @g.formula(tags=("greeks",), description="Carry discount e^{(b-r)T} = carry_spot / S.")
+    def carry_discount(cs: pl.Expr = uses(carry_spot), S: pl.Expr = uses(spot)) -> pl.Expr:
+        return cs / S
 
+    @g.formula(tags=("greeks",), description="Rate discount e^{-rT} = disc_strike / K.")
+    def rate_discount(ds: pl.Expr = uses(disc_strike), K: pl.Expr = uses(strike)) -> pl.Expr:
+        return ds / K
 
-@bsm_greeks_graph.formula(tags=("greeks",), description="Rate discount e^{-rT} = disc_strike / K.")
-def rate_discount(disc_strike: pl.Expr, strike: pl.Expr) -> pl.Expr:
-    return disc_strike / strike
-
-
-@bsm_greeks_graph.formula(
-    tags=("greeks",),
-    symbol=r"\Delta",
-    latex=r"\eta e^{(b-r)T}N(\eta d_1)",
-    description="dV/dS = eta * e^{(b-r)T} * N(eta*d1).",
-)
-def delta(eta: pl.Expr, carry_discount: pl.Expr, d1: pl.Expr) -> pl.Expr:
-    return eta * carry_discount * norm_cdf_expr(eta * d1)
-
-
-@bsm_greeks_graph.formula(
-    tags=("greeks",),
-    symbol=r"\Gamma",
-    latex=r"\frac{e^{(b-r)T}N'(d_1)}{S\sigma\sqrt{T}}",
-    description="d2V/dS2 = e^{(b-r)T} N'(d1) / (S sigma sqrt(T)).",
-)
-def gamma(
-    carry_discount: pl.Expr, d1: pl.Expr, spot: pl.Expr, vol: pl.Expr, year_fraction: pl.Expr
-) -> pl.Expr:
-    return carry_discount * norm_pdf_expr(d1) / (spot * vol * year_fraction.sqrt())
-
-
-@bsm_greeks_graph.formula(tags=("greeks",), description="dV/dsigma = S e^{(b-r)T} N'(d1) sqrt(T).")
-def vega(spot: pl.Expr, carry_discount: pl.Expr, d1: pl.Expr, year_fraction: pl.Expr) -> pl.Expr:
-    return spot * carry_discount * norm_pdf_expr(d1) * year_fraction.sqrt()
-
-
-@bsm_greeks_graph.formula(tags=("greeks",), description="theta = dV/dt = -dV/dT.")
-def theta(
-    spot: pl.Expr,
-    strike: pl.Expr,
-    rate: pl.Expr,
-    cost_of_carry: pl.Expr,
-    vol: pl.Expr,
-    year_fraction: pl.Expr,
-    eta: pl.Expr,
-    carry_discount: pl.Expr,
-    rate_discount: pl.Expr,
-    d1: pl.Expr,
-    d2: pl.Expr,
-) -> pl.Expr:
-    decay = -(spot * carry_discount * norm_pdf_expr(d1) * vol) / (2.0 * year_fraction.sqrt())
-    carry_term = eta * (cost_of_carry - rate) * spot * carry_discount * norm_cdf_expr(eta * d1)
-    rate_term = eta * rate * strike * rate_discount * norm_cdf_expr(eta * d2)
-    return decay - carry_term - rate_term
-
-
-@bsm_greeks_graph.formula(tags=("greeks",), description="dV/dr at fixed carry b.")
-def rho(
-    eta: pl.Expr,
-    year_fraction: pl.Expr,
-    strike: pl.Expr,
-    rate_discount: pl.Expr,
-    d2: pl.Expr,
-    spot: pl.Expr,
-    carry_discount: pl.Expr,
-    d1: pl.Expr,
-) -> pl.Expr:
-    return (
-        eta
-        * year_fraction
-        * (
-            strike * rate_discount * norm_cdf_expr(eta * d2)
-            - spot * carry_discount * norm_cdf_expr(eta * d1)
-        )
+    @g.formula(
+        tags=("greeks",),
+        symbol=r"\Delta",
+        latex=r"\eta e^{(b-r)T}N(\eta d_1)",
+        description="dV/dS = eta * e^{(b-r)T} * N(eta*d1).",
     )
+    def delta(
+        e: pl.Expr = uses(eta),
+        cd: pl.Expr = uses(carry_discount),
+        d1_: pl.Expr = uses(d1),
+    ) -> pl.Expr:
+        return e * cd * norm_cdf_expr(e * d1_)
 
+    @g.formula(
+        tags=("greeks",),
+        symbol=r"\Gamma",
+        latex=r"\frac{e^{(b-r)T}N'(d_1)}{S\sigma\sqrt{T}}",
+        description="d2V/dS2 = e^{(b-r)T} N'(d1) / (S sigma sqrt(T)).",
+    )
+    def gamma(
+        cd: pl.Expr = uses(carry_discount),
+        d1_: pl.Expr = uses(d1),
+        S: pl.Expr = uses(spot),
+        sigma: pl.Expr = uses(vol),
+        T_: pl.Expr = uses(year_fraction),
+    ) -> pl.Expr:
+        return cd * norm_pdf_expr(d1_) / (S * sigma * T_.sqrt())
 
-bsm_greeks_graph.returns("greeks", OptionGreeks)
+    @g.formula(tags=("greeks",), description="dV/dsigma = S e^{(b-r)T} N'(d1) sqrt(T).")
+    def vega(
+        S: pl.Expr = uses(spot),
+        cd: pl.Expr = uses(carry_discount),
+        d1_: pl.Expr = uses(d1),
+        T_: pl.Expr = uses(year_fraction),
+    ) -> pl.Expr:
+        return S * cd * norm_pdf_expr(d1_) * T_.sqrt()
+
+    @g.formula(tags=("greeks",), description="theta = dV/dt = -dV/dT.")
+    def theta(
+        S: pl.Expr = uses(spot),
+        K: pl.Expr = uses(strike),
+        r: pl.Expr = uses(rate),
+        b: pl.Expr = uses(cost_of_carry),
+        sigma: pl.Expr = uses(vol),
+        T_: pl.Expr = uses(year_fraction),
+        e: pl.Expr = uses(eta),
+        cd: pl.Expr = uses(carry_discount),
+        rd: pl.Expr = uses(rate_discount),
+        d1_: pl.Expr = uses(d1),
+        d2_: pl.Expr = uses(d2),
+    ) -> pl.Expr:
+        decay = -(S * cd * norm_pdf_expr(d1_) * sigma) / (2.0 * T_.sqrt())
+        carry_term = e * (b - r) * S * cd * norm_cdf_expr(e * d1_)
+        rate_term = e * r * K * rd * norm_cdf_expr(e * d2_)
+        return decay - carry_term - rate_term
+
+    @g.formula(tags=("greeks",), description="dV/dr at fixed carry b.")
+    def rho(
+        e: pl.Expr = uses(eta),
+        T_: pl.Expr = uses(year_fraction),
+        K: pl.Expr = uses(strike),
+        rd: pl.Expr = uses(rate_discount),
+        d2_: pl.Expr = uses(d2),
+        S: pl.Expr = uses(spot),
+        cd: pl.Expr = uses(carry_discount),
+        d1_: pl.Expr = uses(d1),
+    ) -> pl.Expr:
+        return e * T_ * (K * rd * norm_cdf_expr(e * d2_) - S * cd * norm_cdf_expr(e * d1_))
+
+    return GreekTerms(delta=delta, gamma=gamma, vega=vega, theta=theta, rho=rho)

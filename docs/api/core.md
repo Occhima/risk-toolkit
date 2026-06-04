@@ -2,6 +2,14 @@
 
 The primitives that power all pricing in Schenberg.
 
+## Term
+
+::: schenberg.core.graph.Term
+
+## uses
+
+::: schenberg.core.graph.uses
+
 ## FormulaGraph
 
 ::: schenberg.core.graph.FormulaGraph
@@ -9,6 +17,10 @@ The primitives that power all pricing in Schenberg.
 ## Router
 
 ::: schenberg.core.router.Router
+
+## MarketRead
+
+::: schenberg.core.market.MarketRead
 
 ## MarketRequirement
 

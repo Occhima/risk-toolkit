@@ -17,7 +17,7 @@ from schenberg.market_data.date_rules import nth_business_day_of_following_month
 from schenberg.market_data.forwards import EnergyForwardCurveSpec
 from schenberg.market_data.fx import FxRatesSpec
 from schenberg.market_data.snapshot import MarketSnapshot
-from schenberg.pricing.instruments.forward.generic import forward_valuation_graph
+from schenberg.pricing.instruments.forward.generic import assemble_forward, forward_payoff_term
 from schenberg.pricing.instruments.forward.prices import aggregate_forward_prices
 from schenberg.pricing.instruments.forward.router import forward_router
 
@@ -35,8 +35,7 @@ _FIXING_BUSINESS_DAY = 6
 
 def with_fixing_date(legs: pl.LazyFrame) -> pl.LazyFrame:
     """Attach each row's settlement/fixing date: the 6th ANBIMA business day of the
-    month following the contract's delivery month. A pure normalization step —
-    columns are referenced through the schema (``cols``), never as raw strings."""
+    month following the contract's delivery month. A pure normalization step."""
     fixing_date = nth_business_day_of_following_month(
         E.delivery_period.expr(),
         n=_FIXING_BUSINESS_DAY,
@@ -51,10 +50,23 @@ def with_fixing_date(legs: pl.LazyFrame) -> pl.LazyFrame:
     F.settlement_type == SettlementType.PHYSICAL.value,
 )
 def energy_forward_graph() -> FormulaGraph:
-    return FormulaGraph.assemble(
-        "energy_forward",
-        forward_valuation_graph,
-        fixed_market=(ENERGY.forward_price(), DI.zero_rate(), FX.fx_rate()),
+    g = FormulaGraph("energy_forward", input=EnergyForwardLeg)
+    t = g.input
+    # The energy curve writes two columns at once (forward_price + settle days as
+    # payment_days), so it keeps its own output names; the curve-supplied
+    # payment_days then drives discounting.
+    m = g.market(
+        energy=ENERGY.forward_price(submarket=t.submarket, period=t.delivery_period),
+        zero_rate=DI.zero_rate(indexer=t.id_indexador),
+        fx_rate=FX.fx_rate(currency=t.currency),
+    )
+    future_value = forward_payoff_term(g, forward_price=m.forward_price, strike=t.strike)
+    return assemble_forward(
+        g,
+        future_value=future_value,
+        zero_rate=m.zero_rate,
+        payment_days=m.payment_days,
+        fx_rate=m.fx_rate,
     )
 
 
