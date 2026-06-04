@@ -5,7 +5,6 @@ from __future__ import annotations
 from schenberg.pricing.instruments.option.models import (
     option_price_router,
     option_risk_router,
-    option_router,
 )
 from schenberg.pricing.instruments.option.prices import (
     price_options,
@@ -15,7 +14,6 @@ from schenberg.pricing.instruments.option.prices import (
 __all__ = [
     "option_price_router",
     "option_risk_router",
-    "option_router",
     "price_options",
     "price_options_with_greeks",
 ]

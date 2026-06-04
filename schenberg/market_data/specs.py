@@ -11,28 +11,46 @@ actual build to :meth:`JoinSpec.read`.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import overload
 
 from schenberg.core.columns import ColumnBinding, ColumnLike, ColumnSet, col_name
-from schenberg.core.market import MarketRequirement
+from schenberg.core.market import MarketRead, MarketRequirement
 
 
 @dataclass(frozen=True, slots=True)
 class JoinSpec:
     """A market table addressed by a keyed left join.
 
-    ``read`` builds a single-value :class:`MarketRequirement`; each ``key`` is a
-    ``(trade_side_column, quote_side_column)`` pair. With ``output`` omitted the
-    requirement's output defaults to ``value_col`` and is renamed later by
-    ``FormulaGraph.for_market``.
+    ``read`` builds a single-value market dependency; each ``key`` is a
+    ``(trade_side_column, quote_side_column)`` pair. With ``output`` omitted it
+    returns a delayed :class:`MarketRead`, whose output column ``g.market`` names
+    from its keyword; with ``output`` given it returns the concrete
+    :class:`MarketRequirement`.
     """
 
     table: str
+
+    @overload
+    def read(
+        self, value_col: str, *keys: tuple[ColumnLike, str], output: None = ...
+    ) -> MarketRead: ...
+
+    @overload
+    def read(
+        self, value_col: str, *keys: tuple[ColumnLike, str], output: str
+    ) -> MarketRequirement: ...
 
     def read(
         self,
         value_col: str,
         *keys: tuple[ColumnLike, str],
         output: str | None = None,
-    ) -> MarketRequirement:
+    ) -> MarketRequirement | MarketRead:
         on = ColumnSet(tuple(ColumnBinding(col_name(left), right) for left, right in keys))
-        return MarketRequirement(table=self.table, on=on, outputs={value_col: output or value_col})
+
+        def build(out: str) -> MarketRequirement:
+            return MarketRequirement(table=self.table, on=on, outputs={value_col: out})
+
+        if output is None:
+            return MarketRead(build=build)
+        return build(output)

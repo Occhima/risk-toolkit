@@ -8,16 +8,11 @@ import polars as pl
 import pytest
 from schenberg.market_data.snapshot import MarketSnapshot
 from schenberg.market_data.sources import MarketSource
-from schenberg.pricing.instruments.forward.generic import (
-    base_forward_graph,
-    forward_valuation_graph,
-)
+from schenberg.pricing.instruments.forward.generic import base_forward_graph
 
 
-def test_forward_valuation_graph_defines_generic_payoff() -> None:
-    assert {"forward_price", "strike"}.issubset(
-        forward_valuation_graph.dependencies_of("future_value")
-    )
+def test_base_forward_graph_defines_generic_payoff() -> None:
+    assert {"forward_price", "strike"}.issubset(base_forward_graph.dependencies_of("future_value"))
 
 
 def test_base_forward_graph_prices_generic_forward_spread() -> None:

@@ -15,6 +15,13 @@ class ForwardTrade(DataFrameModel):
     payment_days: int
 
 
+class GenericForwardLeg(ForwardTrade):
+    """A generic forward leg: a forward price and a strike, valued and discounted."""
+
+    forward_price: float
+    strike: float
+
+
 class EnergyForwardLeg(ForwardTrade):
     submarket: str
     delivery_period: str

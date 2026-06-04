@@ -9,7 +9,7 @@ import polars as pl
 import pytest
 from pandera.typing.polars import LazyFrame
 from schenberg.core.columns import ColumnRef, cols
-from schenberg.core.graph import FormulaGraph
+from schenberg.core.graph import FormulaGraph, uses
 from schenberg.core.router import Router
 from schenberg.domain.enums import InstrumentType
 from schenberg.domain.schemas.forward import EnergyForwardLeg, ForwardTrade
@@ -114,13 +114,14 @@ def test_market_snapshot_from_sources_attach_and_shock() -> None:
 
 
 def test_router_fallback_receives_all_rows_with_no_cases() -> None:
-    graph = FormulaGraph("fallback")
+    graph = FormulaGraph("fallback", input=ForwardTrade)
+    t = graph.input
 
     @graph.formula()
-    def priced_marker(payment_days: pl.Expr) -> pl.Expr:
+    def priced_marker(payment_days: pl.Expr = uses(t.payment_days)) -> pl.Expr:
         return payment_days * 0 + 1
 
-    graph.returns("pricing", priced_marker="priced_marker")
+    graph.returns("pricing", priced_marker=priced_marker)
     router = Router.on(cols(ForwardTrade).forward_family).default(graph)
 
     out = router.compute(

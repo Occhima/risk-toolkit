@@ -8,22 +8,31 @@ example.
 
 ## Add a new payoff: write a graph
 
-An instrument is "another graph". Define formulas whose parameter names are
-their dependencies, declare the market data the graph needs, and name a view:
+An instrument is "another graph". Declare it over an input schema, name the market
+data as terms with `g.market`, wire formulas with `uses`, and publish a view:
 
 ```python
-g = FormulaGraph("my_instrument")
+import polars as pl
+from schenberg.core.graph import FormulaGraph, uses
+from schenberg.market_data.curves import CurveSpec
+
+g = FormulaGraph("my_instrument", input=MyTrade)
+t = g.input
+m = g.market(forward_price=CurveSpec("a_curve").value("price",
+                                                      indexer=t.id_indexador,
+                                                      tenor=t.payment_days))
 
 @g.formula()
-def payoff(forward_price: pl.Expr, strike: pl.Expr) -> pl.Expr:
-    return forward_price - strike
+def payoff(fwd: pl.Expr = uses(m.forward_price), k: pl.Expr = uses(t.strike)) -> pl.Expr:
+    return fwd - k
 
-g.returns("pricing", value="payoff")
-g.for_market(forward_price=CurveSpec("a_curve").value("price"))
+g.returns("pricing", value=payoff)
 ```
 
-Reuse shared math from `schenberg.math.expressions`, and `compose_with()`
-existing graphs to inherit their formulas rather than copy them.
+The full worked version is
+[`examples/custom_instrument/graph.py`](../examples/custom_instrument/graph.py).
+Reuse shared math from `schenberg.math.expressions`, and `extend()` /
+`compose_with()` existing graphs to inherit their formulas rather than copy them.
 
 ## Add a new variant of the same payoff: route it
 
@@ -94,20 +103,16 @@ router or graph change.
    )
    ```
 
-2. Reference that column in the market requirement:
+2. Declare it as a market term, naming the output by keyword:
 
    ```python
-   graph.uses_market(
-       FIXINGS.value(
-           indexer="id_indexador",
-           date="pca_fixing_date",
-           output="pca_factor",
-       )
+   m = graph.market(
+       pca_factor=FIXINGS.value(indexer="id_indexador", date="pca_fixing_date"),
    )
    ```
 
-The graph formula sees `pca_factor` as a plain input; it never knows which
-calendar convention was applied.  Adding a new convention is a one-line
+The graph formula reads `m.pca_factor` like any other market term; it never knows
+which calendar convention was applied.  Adding a new convention is a one-line
 expression at the call site.
 
 ## Structured products
@@ -133,7 +138,7 @@ with `instrument_type = "STRUCTURE"`.
 
 ## Checklist
 
-- [ ] New math → a graph (`FormulaGraph`), reusing `compose_with()` / shared expressions.
+- [ ] New math → a graph (`FormulaGraph`), reusing `extend()` / `compose_with()` / shared expressions.
 - [ ] Per-row formula forks → a `Router`; pure value differences → a join key.
 - [ ] Join keys not in the raw input → a transform/stage *before* the graph.
 - [ ] Index/convention differences → a data registry, extended by one row.

@@ -9,7 +9,7 @@ from schenberg.core.graph import FormulaGraph
 from schenberg.market_data.interpolated import InterpolatedBook
 from schenberg.market_data.sources import MarketSource
 from schenberg.pricing.instruments.option import price_options, price_options_with_greeks
-from schenberg.pricing.instruments.option.models import option_price_router, option_router
+from schenberg.pricing.instruments.option.models import option_price_router
 
 
 def _priced(option_inputs, option_market) -> pl.DataFrame:
@@ -20,7 +20,7 @@ def _priced(option_inputs, option_market) -> pl.DataFrame:
 
 def test_router_covers_the_four_model_kind_leaves() -> None:
     expected_leaves = 4  # {GENERALIZED, MERTON} x {CALL, PUT}
-    assert len(option_router.cases) == expected_leaves
+    assert len(option_price_router.branches) == expected_leaves
 
 
 def test_generalized_call_matches_textbook_black_scholes(option_inputs, option_market) -> None:
@@ -86,7 +86,7 @@ def _ncdf(x: float) -> float:
 
 
 def test_option_graph_declares_vol_surface() -> None:
-    graph = cast(FormulaGraph, option_price_router.cases[0][1])
+    graph = cast(FormulaGraph, option_price_router.branches[0].computation)
     assert "vol" in graph.info(view="price").market_outputs
 
 

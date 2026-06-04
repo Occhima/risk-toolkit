@@ -2,11 +2,12 @@
 
 **Composable, lazy pricing for financial instruments — as a graph of formulas.**
 
-Schenberg is a Python pricing toolkit built on lazy [Polars](https://pola.rs) dataframes,
-[Pandera](https://pandera.readthedocs.io) boundary schemas, and a small graph engine
-(`rustworkx`) for composable pricing formulas. You describe a price as a DAG of
-row-local formulas; the engine compiles it into a single lazy expression and never
-collects until you ask.
+Schenberg is a lazy, contract-oriented pricing DSL built on lazy [Polars](https://pola.rs)
+dataframes, [Pandera](https://pandera.readthedocs.io) boundary schemas, and a small graph
+engine (`rustworkx`). Inputs, market reads and formulas are **Terms** inside a
+**FormulaGraph**; the `MarketSnapshot` is the environment supplied at compute time. The
+same graph declaration can be interpreted as lazy Polars, a Mermaid diagram, explanation
+text, or debug stages, and never collects until you ask.
 
 ```python
 from datetime import date
@@ -31,6 +32,6 @@ market = MarketSnapshot.from_sources(
 
 | | |
 |---|---|
-| **[Concepts](concepts.md)** | Mental model: FormulaGraph, Router, MarketSnapshot, Workflow |
+| **[Concepts](concepts.md)** | Mental model: Term, FormulaGraph, Router as ArrowChoice, MarketSnapshot, Workflow |
 | **[Extending](extending.md)** | Add an instrument, a variant, or a market dimension |
 | **[API Reference](api/index.md)** | Auto-generated from source docstrings |
