@@ -18,26 +18,25 @@ P = cols(ForwardPricing)
 PX = cols(InstrumentPrice)
 
 
+def aggregate_forward_prices(priced: pl.LazyFrame, *, id_col: str) -> LazyFrame[InstrumentPrice]:
+    """Sum priced forward legs (``value``) per instrument into ``InstrumentPrice``.
+
+    Shared by every forward facade — the generic backbone and the energy forward —
+    so the group-by/aggregate/select shape is stated once.
+    """
+    result = (
+        priced.group_by(id_col)
+        .agg(price=P.value.expr().sum())
+        .with_columns(instrument_type=pl.lit(InstrumentType.FORWARD.value))
+        .select(PX.instrument_type.name, PX.instrument_id.name, PX.price.name)
+    )
+    return cast(LazyFrame[InstrumentPrice], result)
+
+
 @pa.check_types(lazy=True)
 def price_forward_instruments(
     forwards: LazyFrame[ForwardTrade],
     market: MarketSnapshot,
 ) -> LazyFrame[InstrumentPrice]:
-    priced = forward_router.compute(
-        forwards,
-        market=market,
-        view="pricing",
-    )
-
-    result = (
-        priced.group_by(F.instrument_id.name)
-        .agg(price=P.value.expr().sum())
-        .with_columns(instrument_type=pl.lit(InstrumentType.FORWARD.value))
-        .select(
-            PX.instrument_type.name,
-            PX.instrument_id.name,
-            PX.price.name,
-        )
-    )
-
-    return cast(LazyFrame[InstrumentPrice], result)
+    priced = forward_router.compute(forwards, market=market, view="pricing")
+    return aggregate_forward_prices(priced, id_col=F.instrument_id.name)

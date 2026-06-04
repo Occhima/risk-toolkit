@@ -1,8 +1,9 @@
 """Generic forward valuation graph.
 
-The graph stays boring and instrument-agnostic: it adds a generic payoff on top
-of the shared :data:`~schenberg.pricing.discounting.discount_graph` and an FX
-translation, so
+The graph stays boring and instrument-agnostic: on top of the shared
+:data:`~schenberg.pricing.discounting.discounted_cashflow_graph` (which owns the
+``future_value -> present_value`` discount step) it adds only the forward's
+payoff and an FX translation, so
 
 ``forward_price - strike -> future_value -> present_value -> value``
 """
@@ -15,7 +16,7 @@ from schenberg.core.graph import FormulaGraph
 from schenberg.domain.schemas.forward import ForwardPricing
 from schenberg.market_data.curves.di import DiCurveSpec
 from schenberg.market_data.fx import FxRatesSpec
-from schenberg.pricing.discounting import discount_graph
+from schenberg.pricing.discounting import discounted_cashflow_graph
 
 DI = DiCurveSpec("di_curve")
 FX = FxRatesSpec("fx_rates")
@@ -35,15 +36,6 @@ def future_value(forward_price: pl.Expr, strike: pl.Expr) -> pl.Expr:
 
 @_forward_payoff.formula(
     dtype=pl.Float64,
-    tags=("pricing",),
-    description="Discount future value into local present value.",
-)
-def present_value(future_value: pl.Expr, discount_factor: pl.Expr) -> pl.Expr:
-    return future_value * discount_factor
-
-
-@_forward_payoff.formula(
-    dtype=pl.Float64,
     tags=("pricing", "fx"),
     description="Translate local present value into reporting currency.",
 )
@@ -51,9 +43,10 @@ def value(present_value: pl.Expr, fx_rate: pl.Expr) -> pl.Expr:
     return present_value * fx_rate
 
 
-# A forward = the shared discounting backbone + a forward payoff.
+# A forward = the shared discounted-cashflow backbone + a forward payoff (which
+# defines future_value) + an FX step.
 forward_valuation_graph = FormulaGraph.compose(
-    "forward_valuation", discount_graph, _forward_payoff
+    "forward_valuation", discounted_cashflow_graph, _forward_payoff
 ).returns("pricing", ForwardPricing)
 
 # The "pricing" view carries through compose, so base_forward only adds its market.

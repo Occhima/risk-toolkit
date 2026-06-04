@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import cast
-
 import pandera.polars as pa
 import polars as pl
 from pandera.typing.polars import LazyFrame
@@ -11,7 +9,7 @@ from pandera.typing.polars import LazyFrame
 from schenberg.core.columns import cols
 from schenberg.core.graph import FormulaGraph
 from schenberg.domain.enums import ForwardFamily, InstrumentType, SettlementType
-from schenberg.domain.schemas.forward import EnergyForwardLeg, ForwardPricing, ForwardTrade
+from schenberg.domain.schemas.forward import EnergyForwardLeg, ForwardTrade
 from schenberg.domain.schemas.position import InstrumentPrice
 from schenberg.market_data.calendar.anbima import ANBIMA_HOLIDAYS
 from schenberg.market_data.curves.di import DiCurveSpec
@@ -20,12 +18,11 @@ from schenberg.market_data.forwards import EnergyForwardCurveSpec
 from schenberg.market_data.fx import FxRatesSpec
 from schenberg.market_data.snapshot import MarketSnapshot
 from schenberg.pricing.instruments.forward.generic import forward_valuation_graph
+from schenberg.pricing.instruments.forward.prices import aggregate_forward_prices
 from schenberg.pricing.instruments.forward.router import forward_router
 
 F = cols(ForwardTrade)
 E = cols(EnergyForwardLeg)
-P = cols(ForwardPricing)
-PX = cols(InstrumentPrice)
 
 DI = DiCurveSpec("di_curve")
 ENERGY = EnergyForwardCurveSpec("energy_forward_curve")
@@ -66,21 +63,5 @@ def price_energy_forward(
     legs: LazyFrame[EnergyForwardLeg],
     market: MarketSnapshot,
 ) -> LazyFrame[InstrumentPrice]:
-    priced = energy_forward_graph.compute(
-        legs,
-        market=market,
-        view="pricing",
-    )
-
-    result = (
-        priced.group_by(E.instrument_id.name)
-        .agg(price=P.value.expr().sum())
-        .with_columns(instrument_type=pl.lit(InstrumentType.FORWARD.value))
-        .select(
-            PX.instrument_type.name,
-            PX.instrument_id.name,
-            PX.price.name,
-        )
-    )
-
-    return cast(LazyFrame[InstrumentPrice], result)
+    priced = energy_forward_graph.compute(legs, market=market, view="pricing")
+    return aggregate_forward_prices(priced, id_col=E.instrument_id.name)

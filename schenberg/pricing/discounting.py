@@ -1,10 +1,17 @@
 """Shared time-and-discount backbone.
 
-Every discounted instrument — a forward, a swap leg — needs the same two facts:
-the year fraction to maturity and the discount factor off the zero curve. They
-are declared once here and composed into each instrument's valuation graph, so
-"discount a cashflow" is one canonical statement instead of a per-instrument
-copy. New discounted instruments compose this graph and add only their payoff.
+Every discounted instrument — a forward, a swap leg — needs the same three facts:
+the year fraction to maturity, the discount factor off the zero curve, and the
+present value of a future cashflow. They are declared once here and composed into
+each instrument's valuation graph, so "discount a future cashflow" is one
+canonical statement instead of a per-instrument copy.
+
+A forward and a swap leg are the *same machine*: both end in
+``future_value * discount_factor``. They differ only in the payoff that produces
+``future_value`` (``forward_price - strike`` for a forward; the signed cashflow
+for a swap leg) and whether an FX step follows. So each instrument composes
+:data:`discounted_cashflow_graph` and supplies a payoff that defines
+``future_value``; nothing re-states the discounting itself.
 """
 
 from __future__ import annotations
@@ -40,3 +47,24 @@ def year_fraction(payment_days: pl.Expr) -> pl.Expr:
 )
 def discount_factor(zero_rate: pl.Expr, year_fraction: pl.Expr) -> pl.Expr:
     return continuous_discount_factor_expr(zero_rate, year_fraction)
+
+
+_present_value = FormulaGraph("present_value")
+
+
+@_present_value.formula(
+    dtype=pl.Float64,
+    tags=("pricing",),
+    symbol="PV",
+    latex=r"V \cdot DF",
+    description="Discount a future cashflow into local present value.",
+)
+def present_value(future_value: pl.Expr, discount_factor: pl.Expr) -> pl.Expr:
+    return future_value * discount_factor
+
+
+# The shared discounted-cashflow backbone: time + discounting + the one PV step.
+# Instruments compose this and define ``future_value`` (their payoff).
+discounted_cashflow_graph = FormulaGraph.compose(
+    "discounted_cashflow", discount_graph, _present_value
+)
