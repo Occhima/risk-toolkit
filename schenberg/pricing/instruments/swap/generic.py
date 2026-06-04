@@ -38,8 +38,10 @@ swap_leg_valuation_graph = FormulaGraph.compose(
     "swap_leg_valuation", discount_graph, _leg_payoff
 ).returns("pricing", LegPricing)
 
-base_swap_leg_graph = (
-    FormulaGraph.compose("base_swap_leg", swap_leg_valuation_graph)
-    .for_market(zero_rate=CurveSpec("curves").value("zero_rate"))
-    .returns("pricing", LegPricing)
+# The "pricing" view carries through compose, so base_swap_leg only adds its
+# market — no need to re-declare the view.
+base_swap_leg_graph = FormulaGraph.assemble(
+    "base_swap_leg",
+    swap_leg_valuation_graph,
+    market={"zero_rate": CurveSpec("curves").value("zero_rate")},
 )

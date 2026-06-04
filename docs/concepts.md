@@ -71,10 +71,12 @@ g.for_market(
 )
 ```
 
-`CURVES.value(...)` with no `output=` returns a `MarketRead` whose output column
-is finalized from the keyword (`rate`). Pass `output=` to get a fully built
-`MarketRequirement`, or attach fixed-output dependencies through the lower-level
-`g.uses_market(req1, req2)` escape hatch.
+`CURVES.value(...)` returns a `MarketRequirement` whose output column defaults to
+the value column's name; `for_market` then renames it to the keyword (`rate`).
+Multi-output joins (one read that writes several columns) can't be renamed by
+keyword — attach them through the lower-level `g.uses_market(req1, req2)` escape
+hatch. Every plain keyed spec (`CurveSpec`, `FxRatesSpec`, `FixingsSpec`) is a thin
+wrapper over the shared `JoinSpec` join builder.
 
 At pricing time the engine attaches the market **before** compiling formulas, so
 **join keys must already be columns** on the input frame. Anything that derives

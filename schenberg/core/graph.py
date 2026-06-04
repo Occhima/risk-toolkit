@@ -228,6 +228,14 @@ class FormulaGraph:
                 formulas[node.name] = node
             merged._input_aliases.update(g._input_aliases)
             merged._market.extend(g._market)
+            for view, mapping in g._views.items():  # carry views; a re-declared
+                existing = merged._views.setdefault(view, {})  # view must not conflict
+                for col, node_name in mapping.items():
+                    if existing.get(col, node_name) != node_name:
+                        raise ValueError(
+                            f"conflicting view column {view}.{col} in compose({name!r})"
+                        )
+                    existing[col] = node_name
 
         for node in formulas.values():  # 1. formula nodes
             merged._indices[node.name] = merged._graph.add_node(node)
@@ -245,6 +253,33 @@ class FormulaGraph:
         and ``b`` into a fresh graph (``self`` first), defaulting the new name to
         ``self.name``."""
         return type(self).compose(name or self.name, self, *others)
+
+    @classmethod
+    def assemble(
+        cls,
+        name: str,
+        *graphs: FormulaGraph,
+        market: Mapping[str, MarketDependency] | None = None,
+        fixed_market: tuple[MarketDependency, ...] = (),
+        schema: object | None = None,
+        view: str = "pricing",
+    ) -> FormulaGraph:
+        """One verb for the ``compose → for_market → returns`` assembly recipe.
+
+        Merge ``graphs`` (their views carry through :meth:`compose`), attach the
+        ``market`` reads (named by keyword) and any ``fixed_market`` multi-output
+        joins, and publish ``view`` from ``schema``. This is the single way every
+        instrument graph is built — swap legs, forwards, energy — so the recipe is
+        stated once instead of re-spelled per instrument.
+        """
+        graph = cls.compose(name, *graphs)
+        if market:
+            graph.for_market(**market)
+        if fixed_market:
+            graph.uses_market(*fixed_market)
+        if schema is not None:
+            graph.returns(view, schema)
+        return graph
 
     # ---- compilation -----------------------------------------------------
 

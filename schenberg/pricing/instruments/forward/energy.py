@@ -54,17 +54,10 @@ def with_fixing_date(legs: pl.LazyFrame) -> pl.LazyFrame:
     F.settlement_type == SettlementType.PHYSICAL.value,
 )
 def energy_forward_graph() -> FormulaGraph:
-    return (
-        FormulaGraph.compose(
-            "energy_forward",
-            forward_valuation_graph,
-        )
-        .uses_market(
-            ENERGY.forward_price(),
-            DI.zero_rate(),
-            FX.fx_rate(),
-        )
-        .returns("pricing", ForwardPricing)
+    return FormulaGraph.assemble(
+        "energy_forward",
+        forward_valuation_graph,
+        fixed_market=(ENERGY.forward_price(), DI.zero_rate(), FX.fx_rate()),
     )
 
 

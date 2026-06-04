@@ -14,7 +14,7 @@ from collections.abc import Mapping
 from schenberg.core.columns import cols
 from schenberg.core.graph import FormulaGraph
 from schenberg.core.market import MarketDependency
-from schenberg.domain.schemas import LegPricing, SwapLegInput
+from schenberg.domain.schemas import SwapLegInput
 from schenberg.market_data.curves import CurveSpec
 from schenberg.market_data.fixings import FixingsSpec
 from schenberg.pricing.instruments.swap.generic import swap_leg_valuation_graph
@@ -40,11 +40,7 @@ def register_leg(
     curve alone (the only market a fixed leg needs).
     """
     reads = market if market is not None else {"zero_rate": CURVES.value("zero_rate")}
-    graph = (
-        FormulaGraph.compose(name, swap_leg_valuation_graph, cashflow)
-        .for_market(**reads)
-        .returns("pricing", LegPricing)
-    )
+    graph = FormulaGraph.assemble(name, swap_leg_valuation_graph, cashflow, market=reads)
     for kind in kinds:
         swap_leg_router.when(_L.leg_kind == kind)(lambda bound=graph: bound)
     return graph

@@ -56,11 +56,9 @@ forward_valuation_graph = FormulaGraph.compose(
     "forward_valuation", discount_graph, _forward_payoff
 ).returns("pricing", ForwardPricing)
 
-base_forward_graph = (
-    FormulaGraph.compose("base_forward", forward_valuation_graph)
-    .uses_market(
-        DI.zero_rate(),
-        FX.fx_rate(),
-    )
-    .returns("pricing", ForwardPricing)
+# The "pricing" view carries through compose, so base_forward only adds its market.
+base_forward_graph = FormulaGraph.assemble(
+    "base_forward",
+    forward_valuation_graph,
+    fixed_market=(DI.zero_rate(), FX.fx_rate()),
 )

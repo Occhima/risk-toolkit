@@ -14,9 +14,9 @@ The primitives that power all pricing in Schenberg.
 
 ::: schenberg.core.market.MarketRequirement
 
-## MarketRead
+## MarketDependency
 
-::: schenberg.core.market.MarketRead
+::: schenberg.core.market.MarketDependency
 
 ## Workflow
 
