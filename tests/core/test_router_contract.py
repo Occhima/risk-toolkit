@@ -10,7 +10,7 @@ import pytest
 from schenberg.core.columns import cols
 from schenberg.core.graph import FormulaGraph, uses
 from schenberg.core.router import Router
-from schenberg.domain.base import DataFrameModel
+from schenberg.domain.base import SchenbergDataFrameModel as DataFrameModel
 from schenberg.market_data.snapshot import MarketSnapshot
 from schenberg.market_data.sources import MarketSource
 from schenberg.pricing.market import CURVES

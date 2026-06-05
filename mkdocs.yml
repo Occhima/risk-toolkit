@@ -52,6 +52,8 @@ markdown_extensions:
           format: !!python/name:pymdownx.superfences.fence_code_format
   - pymdownx.tabbed:
       alternate_style: true
+  - pymdownx.snippets:
+      base_path: .
   - admonition
   - pymdownx.details
   - attr_list
@@ -65,6 +67,13 @@ validation:
 nav:
   - Home: index.md
   - Concepts: concepts.md
+  - Examples:
+      - examples/index.md
+      - 01 — Generic forward: examples/01_price_a_forward.md
+      - 02 — Energy forward: examples/02_energy_forward.md
+      - 03 — Inspect a formula: examples/03_inspect_a_formula.md
+      - 04 — Shock scenario: examples/04_shock_scenario.md
+      - Custom instrument: examples/custom_instrument/index.md
   - Extending: extending.md
   - API Reference:
       - api/index.md

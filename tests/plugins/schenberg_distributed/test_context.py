@@ -5,7 +5,7 @@ from typing import Any, cast
 
 import polars as pl
 from schenberg.core.graph import FormulaGraph, uses
-from schenberg.domain.base import DataFrameModel
+from schenberg.domain.base import SchenbergDataFrameModel as DataFrameModel
 
 from schenberg_distributed import (
     PricingExecutionContext,

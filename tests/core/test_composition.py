@@ -7,7 +7,7 @@ from typing import cast
 import polars as pl
 import pytest
 from schenberg.core.graph import FormulaGraph, uses
-from schenberg.domain.base import DataFrameModel
+from schenberg.domain.base import SchenbergDataFrameModel as DataFrameModel
 
 
 class Trade(DataFrameModel):

@@ -916,7 +916,9 @@ class Formula:
             return self
         # Legacy form: returns() or returns(schema)
         resolved_schema = (
-            view_or_schema if view_or_schema is not None else (schema if schema is not None else self._output)
+            view_or_schema
+            if view_or_schema is not None
+            else (schema if schema is not None else self._output)
         )
         if resolved_schema is None:
             raise ValueError(f"graph {self.name!r} has no output schema")

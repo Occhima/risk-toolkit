@@ -43,24 +43,32 @@ what the body sees.
 
 ```python
 import polars as pl
-from schenberg.core.graph import PricingGraph, Term, uses
-from schenberg.domain.schemas.option import OptionTrade, OptionPrice
+from schenberg.core.graph import Formula, Term, uses
+from schenberg.domain.base import SchenbergDataFrameModel
 from schenberg.market_data.requirements import MarketRequirements, requires
 from schenberg.pricing.market import CURVES, VOL
 
-class CallRequirements(MarketRequirements[OptionTrade]):
+class MyTrade(SchenbergDataFrameModel):
+    spot: float
+    strike: float
+    payment_days: int
+
+class MyOutput(SchenbergDataFrameModel):
+    price: float
+
+class CallRequirements(MarketRequirements[MyTrade]):
     rate: Term[float] = requires(CURVES.zero_rate())
     vol: Term[float] = requires(VOL.implied_vol())
 
-g = PricingGraph[OptionTrade, CallRequirements, OptionPrice]("generalized_call")
+g = Formula[MyTrade, CallRequirements, MyOutput]("my_call")
 c, m = g.contract, g.market
 
 @g.formula(symbol="T", latex=r"\frac{d}{252}")
 def year_fraction(d: Term[int] = uses(c.payment_days)) -> pl.Expr:
     return d / 252.0
 
-@g.formula(name="price", symbol="C")
-def call_price(
+@g.formula(symbol="C")
+def price(
     S: Term[float] = uses(c.spot),
     r: Term[float] = uses(m.rate),
     sigma: Term[float] = uses(m.vol),
@@ -68,7 +76,7 @@ def call_price(
 ) -> pl.Expr:
     ...  # a Polars expression
 
-g.returns()  # the OptionPrice fields are satisfied by like-named terms
+g.returns()  # MyOutput fields are satisfied by like-named terms
 ```
 
 `returns(schema=None)` publishes the primary `output` view (defaulting to the
@@ -80,13 +88,13 @@ environment and `g.plan(bound)` returns one lazy plan; as a `Computation`,
 
 ## 3. Market data is declared once, in the requirements schema
 
-A `PricingGraph`'s formulas never join. *What market data the instrument needs and
+A `Formula`'s formulas never join. *What market data the instrument needs and
 how to find each row* lives in one place — a `MarketRequirements` schema — and the
 `MarketSnapshot` supplies *where it comes from* at compute time (the Reader
 environment, injected late).
 
 ```python
-class CallRequirements(MarketRequirements[OptionTrade]):
+class CallRequirements(MarketRequirements[MyTrade]):
     rate: Term[float] = requires(CURVES.zero_rate())
     vol: Term[float] = requires(VOL.implied_vol())
 ```
@@ -290,9 +298,12 @@ can `raise_if_errors()`, and renders `to_frame()`.
 ## Contracts at the boundary
 
 Type hints help authors, but **Pandera remains the runtime contract boundary**.
-Pandera schemas (`schenberg/domain`) type the public edges — inputs and outputs of
-the pricing functions — and nothing internal. Inside the engine it's plain Polars
-expressions, so the hot path stays free of per-node validation.
+`SchenbergDataFrameModel` (the base class for every boundary schema) runs
+`@rule_for` contract rules before Pandera validates — filling derived date
+columns like `index_fixing_date` from contract terms. Pricing functions are
+annotated with `@pa.check_types(lazy=True)`; no manual `.resolve()` call is
+needed. Inside the engine it's plain Polars expressions, so the hot path stays
+free of per-node validation.
 
 ## Router vs data
 
@@ -305,7 +316,7 @@ don't route — stack the curves in one table keyed by an identity column and le
 join pick the right rows. Even a convention that *looks* like branching ("IPCA reads
 the index on Jan 1, CPI in April") is still data when it reduces to a different
 *value* in a column — see the
-[custom instrument example](../examples/custom_instrument/README.md).
+[custom instrument example](examples/custom_instrument/index.md).
 
 ## Layers
 

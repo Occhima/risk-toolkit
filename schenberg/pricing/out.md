@@ -796,3 +796,24 @@ def price_energy_forward(
 ```
 
 The pricing function stays clean. The contract resolves itself. The graph remains pure.
+
+
+
+
+class Curve(DataFrameModel):
+    tenor: date
+    rate:  float
+    factor: Optional[float]
+    unit_price: Optional[float]
+
+
+ class ForwardCurve(ContractAdapterMixin):
+
+    _data: FrameT ( narwhals )
+    calendar: Calendar
+
+    def to_market_source() -> MarketSource:
+         ...
+
+    pa.check_types()
+    def build(df?)

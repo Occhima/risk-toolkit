@@ -100,16 +100,35 @@ class MarketRequirement:
     def attach(self, lf: pl.LazyFrame, snapshot: MarketSnapshot) -> pl.LazyFrame:
         """Attach market columns by a left join."""
         src = snapshot.source(self.table).data
-        right = src.select([*self.right_keys, *self.outputs.keys()]).rename(self.outputs)
-        output_columns = set(self.outputs.values())
-        droppable = output_columns - set(self.left_keys)
-        collisions = sorted(droppable & set(lf.collect_schema().names()))
-        if collisions:
-            lf = lf.drop(collisions)
+        # Keep original column names in right — rename after joining to avoid
+        # duplicate-column errors when an output name matches a join key.
+        right = src.select([*self.right_keys, *self.outputs.keys()])
 
-        return lf.join(
+        existing = set(lf.collect_schema().names())
+        output_names = set(self.outputs.values())
+        left_key_set = set(self.left_keys)
+
+        # Drop non-join-key left columns that outputs would overwrite.
+        non_key_collisions = sorted((output_names - left_key_set) & existing)
+        if non_key_collisions:
+            lf = lf.drop(non_key_collisions)
+
+        result = lf.join(
             right,
             left_on=list(self.left_keys),
             right_on=list(self.right_keys),
             how="left",
         )
+
+        # Drop left join-key columns that are overwritten by an output.
+        key_overwrites = sorted(left_key_set & output_names & existing)
+        if key_overwrites:
+            result = result.drop(key_overwrites)
+
+        renames = {
+            val_col: out_col for val_col, out_col in self.outputs.items() if val_col != out_col
+        }
+        if renames:
+            result = result.rename(renames)
+
+        return result

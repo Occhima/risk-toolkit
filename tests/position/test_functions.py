@@ -5,12 +5,9 @@ from typing import cast
 
 import polars as pl
 import pytest
-from pandera.typing.polars import LazyFrame
-from schenberg.domain.schemas.forward import ForwardTrade
 from schenberg.domain.schemas.position import InstrumentPrice, Position, PricedPosition
 from schenberg.position.functions import (
     pnl_from_priced_positions,
-    price_forward_instruments,
     with_prices,
 )
 
@@ -100,14 +97,3 @@ def test_pnl_from_priced_positions_direct_and_pipe() -> None:
     assert direct.select("mtm_pnl").item() == pytest.approx(2.0)
     assert piped.select("price_pnl").item() == pytest.approx(2.0)
     assert piped.select("mtm_pnl").item() == pytest.approx(2.0)
-
-
-def test_price_forward_instruments_returns_instrument_price(energy_inputs, energy_market) -> None:
-    prices = price_forward_instruments(cast(LazyFrame[ForwardTrade], energy_inputs), energy_market)
-
-    result = cast(pl.DataFrame, InstrumentPrice.validate(prices, lazy=True).collect())
-
-    assert result.columns == ["instrument_type", "instrument_id", "price"]
-    assert result.select("instrument_type").item() == "FORWARD"
-    assert result.select("instrument_id").item() == "ENG-1"
-    assert result.select("price").item() == pytest.approx(49.057467, rel=1e-6)

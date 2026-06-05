@@ -59,9 +59,7 @@ class ContractRule:
             computed = defaults[0].expr
 
         if self.output in names:
-            return lf.with_columns(
-                pl.coalesce([pl.col(self.output), computed]).alias(self.output)
-            )
+            return lf.with_columns(pl.coalesce([pl.col(self.output), computed]).alias(self.output))
         return lf.with_columns(computed.alias(self.output))
 
 
@@ -79,7 +77,8 @@ def rule_for(
     """
 
     def decorator(fn: RuleExpr) -> RuleExpr:
-        setattr(fn, _RULE_SPEC_ATTR, _RuleSpec(output=output, selector=selector, value=value, is_default=default))
+        spec = _RuleSpec(output=output, selector=selector, value=value, is_default=default)
+        setattr(fn, _RULE_SPEC_ATTR, spec)
         return fn
 
     return decorator

@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 import polars as pl
 
 from schenberg.core.market import MarketDependency
+from schenberg.market_data.objects.errors import MissingMarketSourceError
 from schenberg.market_data.sources import MarketSource
 
 if TYPE_CHECKING:
@@ -36,7 +37,7 @@ class MarketSnapshot:
         try:
             return self.sources[name]
         except KeyError:
-            raise ValueError(f"snapshot has no market source {name!r}") from None
+            raise MissingMarketSourceError(name, tuple(self.sources)) from None
 
     def attach(self, lf: pl.LazyFrame, req: MarketDependency) -> pl.LazyFrame:
         return req.attach(lf, self)

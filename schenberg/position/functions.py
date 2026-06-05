@@ -8,12 +8,11 @@ from pandera.typing.polars import LazyFrame
 
 from schenberg.core.columns import cols
 from schenberg.domain.schemas.position import InstrumentPrice, Position, PricedPosition
-from schenberg.pricing.instruments.forward.prices import price_forward_instruments
 
 POS = cols(Position)
 PX = cols(InstrumentPrice)
 
-__all__ = ["pnl_from_priced_positions", "price_forward_instruments", "with_prices"]
+__all__ = ["pnl_from_priced_positions", "with_prices"]
 
 
 @pa.check_types(lazy=True)

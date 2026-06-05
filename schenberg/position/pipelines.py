@@ -4,19 +4,13 @@ import polars as pl
 
 from schenberg.core.pipeline import Workflow
 from schenberg.position.functions import with_prices
-from schenberg.pricing.instruments.forward.prices import price_forward_instruments
 
 valuation_pipe = Workflow("valuation")
 
 
 @valuation_pipe.stage
-def forward_prices(forwards, market):
-    return price_forward_instruments(forwards, market)
-
-
-@valuation_pipe.stage
-def priced_positions(positions, forward_prices):
-    return positions.pipe(with_prices, forward_prices)
+def priced_positions(positions, prices):
+    return positions.pipe(with_prices, prices)
 
 
 @valuation_pipe.stage

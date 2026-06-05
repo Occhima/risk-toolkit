@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from datetime import date
 from enum import StrEnum
 
@@ -10,7 +9,6 @@ import pandera.polars as pa
 import polars as pl
 import pytest
 from pandera.typing.polars import LazyFrame
-
 from schenberg.domain.base import SchenbergDataFrameModel
 from schenberg.domain.rules import rule_for
 from schenberg.market_data import date_rules as dates
@@ -110,22 +108,22 @@ def test_null_filled_non_null_preserved() -> None:
 # ---- Test 4: child class overrides parent rule ----------------------------
 
 
+class ChildSchemaPlus10(ForwardContractPricing):
+    @rule_for("index_fixing_date", selector="indexer", value=IndexerEnum.CPI)
+    def _cpi(cls):  # noqa: N805
+        return dates.add_days("tenor", 10)
+
+
+@pa.check_types(lazy=True)
+def identity_child(
+    df: LazyFrame[ChildSchemaPlus10],
+) -> LazyFrame[ChildSchemaPlus10]:
+    return df
+
+
 def test_child_overrides_parent_cpi_rule() -> None:
-    class ChildSchema(ForwardContractPricing):
-        @rule_for("index_fixing_date", selector="indexer", value=IndexerEnum.CPI)
-        def _cpi(cls):  # noqa: N805
-            return dates.add_days("tenor", 10)
-
-    @pa.check_types(lazy=True)
-    def identity_child(
-        df: LazyFrame[ChildSchema],
-    ) -> LazyFrame[ChildSchema]:
-        return df
-
     tenor = date(2026, 3, 10)
-    lf = pl.DataFrame(
-        {"tenor": [tenor], "indexer": [IndexerEnum.CPI]}
-    ).lazy()
+    lf = pl.DataFrame({"tenor": [tenor], "indexer": [IndexerEnum.CPI]}).lazy()
 
     result = identity_child(lf).collect()
     assert result["index_fixing_date"][0] == date(2026, 3, 20)  # +10

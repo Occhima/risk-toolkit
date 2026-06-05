@@ -8,22 +8,24 @@
 
 ::: schenberg.position.functions
 
-## Swap
+## Forwards
 
-::: schenberg.pricing.instruments.swap.pricing
+::: schenberg.pricing.instruments.derivatives.forwards.api
 
-::: schenberg.pricing.instruments.swap.structure
+::: schenberg.pricing.instruments.derivatives.forwards.contracts
+
+::: schenberg.pricing.instruments.derivatives.forwards.market
+
+::: schenberg.pricing.instruments.derivatives.forwards.formulas
+
+## Energy forward
+
+::: schenberg.pricing.instruments.derivatives.forwards.energy.api
+
+::: schenberg.pricing.instruments.derivatives.forwards.energy.contracts
+
+::: schenberg.pricing.instruments.derivatives.forwards.energy.market
 
 ## Structured products
 
 ::: schenberg.pricing.structured
-
-## Forward
-
-::: schenberg.pricing.instruments.forward.generic
-
-::: schenberg.pricing.instruments.forward.energy
-
-## Options
-
-::: schenberg.pricing.instruments.option.prices

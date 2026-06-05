@@ -3,7 +3,7 @@
 The engine is the product. Adding an instrument, an index, or a payoff variant
 is meant to be a small, local change — never an engine edit. This guide walks the
 patterns, using the worked
-[inflation-linked energy forward](../examples/custom_instrument/) as the running
+[inflation-linked energy forward](examples/custom_instrument/index.md) as the running
 example.
 
 ## Add a new payoff: write a graph
@@ -35,7 +35,7 @@ g.returns()  # MyPricing fields are satisfied by like-named terms
 ```
 
 The full worked version is
-[`examples/custom_instrument/graph.py`](../examples/custom_instrument/graph.py).
+[`examples/custom_instrument/graph.py`](examples/custom_instrument/graph.py).
 Reuse shared math from `schenberg.math.expressions` and the shared `Term`
 builders in `schenberg.pricing.discounting` rather than copying formulas.
 
@@ -106,8 +106,8 @@ def price_my_instrument(legs, market):
 ```
 
 For a structured instrument (component pricing + exposure + fold), assemble a
-`Structure` and call `structure.compute(legs, market=market)` — see the swap
-structure in `schenberg/pricing/instruments/swap/structure.py`.
+`Structure` and call `structure.compute(legs, market=market)`. See the
+[Concepts → Structure](concepts.md) section for the pattern.
 
 ## Fixing / reference-date adaptation
 

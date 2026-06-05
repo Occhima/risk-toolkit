@@ -29,8 +29,9 @@ from __future__ import annotations
 from datetime import date
 
 import polars as pl
-from schenberg.core.graph import PricingGraph, Term, uses
-from schenberg.domain.base import DataFrameModel
+
+from schenberg.core.graph import Formula, Term, uses
+from schenberg.domain.base import SchenbergDataFrameModel
 from schenberg.market_data.requirements import Key, Keyed, MarketRequirements, requires
 from schenberg.math.expressions import (
     continuous_discount_factor_expr,
@@ -38,7 +39,7 @@ from schenberg.math.expressions import (
 )
 
 
-class InflationEnergyLeg(DataFrameModel):
+class InflationEnergyLeg(SchenbergDataFrameModel):
     """One delivery period of an inflation-linked energy forward."""
 
     instrument_id: str
@@ -47,10 +48,10 @@ class InflationEnergyLeg(DataFrameModel):
     forward_price: float
     strike: float
     currency: str
-    reference_date: date  # the convention-derived inflation-curve join key
+    reference_date: date  # convention-derived inflation-curve join key
 
 
-class InflationEnergyPricing(DataFrameModel):
+class InflationEnergyPricing(SchenbergDataFrameModel):
     future_value: float
     present_value: float
     value: float
@@ -61,7 +62,7 @@ def _curve(table: str, value_col: str, *keys: Key) -> Keyed:
 
 
 class InflationEnergyRequirements(MarketRequirements[InflationEnergyLeg]):
-    """Custom market reads -- the inflation curve joins on the convention-derived
+    """Custom market reads — the inflation curve joins on the convention-derived
     ``reference_date``, so the index-specific date selects the right point."""
 
     projected_index: Term[float] = requires(
@@ -95,11 +96,12 @@ class InflationEnergyRequirements(MarketRequirements[InflationEnergyLeg]):
     )
 
 
-inflation_energy_graph = PricingGraph[
+inflation_energy_graph = Formula[
     InflationEnergyLeg,
     InflationEnergyRequirements,
     InflationEnergyPricing,
 ]("inflation_energy_forward")
+
 c = inflation_energy_graph.contract
 m = inflation_energy_graph.market
 

@@ -50,14 +50,27 @@ class SchenbergDataFrameModel(ContractAdapterMixin, pa.DataFrameModel):
         return lf
 
     @classmethod
-    def validate(cls, check_obj: Any, *args: Any, **kwargs: Any) -> Any:
-        if isinstance(check_obj, pl.DataFrame):
-            check_obj = check_obj.lazy()
+    def to_schema(cls):
+        schema = super().to_schema()
+        original_validate = schema.validate
 
-        if isinstance(check_obj, pl.LazyFrame):
-            check_obj = cls.resolve(check_obj)
+        def _resolve_then_validate(
+            check_obj: pl.LazyFrame,
+            head: int | None = None,
+            tail: int | None = None,
+            sample: int | None = None,
+            random_state: int | None = None,
+            lazy: bool = False,
+            inplace: bool = False,
+        ) -> pl.LazyFrame:
+            return original_validate(cls.resolve(check_obj), head, tail, sample, random_state, lazy, inplace)
 
-        return super().validate(check_obj, *args, **kwargs)
+        schema.validate = _resolve_then_validate
+        return schema
+
+    @classmethod
+    def validate(cls, check_obj: pl.LazyFrame, *args: Any, **kwargs: Any) -> pl.LazyFrame:
+        return super().validate(cls.resolve(check_obj), *args, **kwargs)
 
     class Config:
         coerce = True

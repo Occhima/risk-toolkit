@@ -9,7 +9,6 @@ import pandera.polars as pa
 import polars as pl
 import pytest
 from pandera.typing.polars import LazyFrame
-
 from schenberg.core.graph import Formula, uses
 from schenberg.domain.base import SchenbergDataFrameModel
 from schenberg.domain.rules import rule_for
@@ -45,7 +44,7 @@ class EnergyForwardPricing(ForwardContractPricing):
     strike: float
 
 
-formula = Formula("dummy_forward", input=EnergyForwardPricing)
+formula = Formula("dummy_forward", contract=EnergyForwardPricing)
 c = formula.input
 
 

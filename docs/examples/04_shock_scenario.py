@@ -1,114 +1,113 @@
-"""Reprice a swap under a shocked market, and inspect the swap Structure.
+"""Reprice an energy forward under a shocked market.
 
-Run with:  uv run python examples/04_shock_scenario.py
+Run with:  uv run python docs/examples/04_shock_scenario.py
 
-A ``Shock`` is an endomorphism ``MarketSnapshot -> MarketSnapshot``: it returns a
-*new* market with sources transformed, never mutating the original, and shocks
-compose. A ``MarketPath`` focuses one source/column to build one. Repricing under
-a stress is just ``price_swaps(legs, market.apply(shock))``.
+A ``Shock`` is an **endomorphism** ``MarketSnapshot → MarketSnapshot``: it
+returns a *new* snapshot with one or more sources transformed, never mutating
+the original. Shocks compose associatively — you can build a stress scenario by
+chaining them.
 
-The swap itself is a ``Structure``: pure leg pricing, then exposure
-(``weighted_pv = pv * leg_weight``), then a fold by ``swap_id``. Position
-direction never touches the pricing graph — ``structure.explain()`` shows the
-whole pipeline.
+The repricing is just ``price_energy_forward(trades, market.apply(shock))``.
+The original market is untouched; you can price both base and stressed without
+keeping two separate copies of the data.
+
+Two ways to build the same +100bp parallel shift are shown here — ``MarketPath``
+(lens-lite path into a source/column) and ``curve_parallel_shift`` (the canned
+helper). Both produce the same ``Shock`` object.
 """
 
 from __future__ import annotations
 
 from datetime import date
-from typing import cast
 
 import polars as pl
-from pandera.typing.polars import LazyFrame
-from schenberg.domain.schemas import SwapLegInput
+
 from schenberg.market_data.path import MarketPath
 from schenberg.market_data.shocks import Shock, curve_parallel_shift
 from schenberg.market_data.snapshot import MarketSnapshot
 from schenberg.market_data.sources import MarketSource
-from schenberg.pricing.api import price_swaps
-from schenberg.pricing.instruments.swap.structure import swap_structure
+from schenberg.pricing.instruments.derivatives.forwards.energy import price_energy_forward
 
+# ---------------------------------------------------------------------------
+# Market
+# ---------------------------------------------------------------------------
 market = MarketSnapshot.from_sources(
-    as_of=date(2026, 6, 3),
+    as_of=date(2026, 6, 5),
     sources=[
         MarketSource(
-            "curves",
+            "energy_forward_curve",
             pl.DataFrame(
                 {
-                    "id_indexador": [1, 2],
-                    "tenor_days": [252, 252],
-                    "zero_rate": [0.10, 0.05],
-                    "forward_rate": [0.12, None],
+                    "submarket": ["SE"],
+                    "delivery_period": ["2026-07"],
+                    "forward_price": [270.0],
                 }
             ).lazy(),
         ),
         MarketSource(
-            "fixings",
+            "curves",
             pl.DataFrame(
-                {"id_indexador": [2], "fixing_date": [date(2026, 6, 3)], "fixing_value": [100.0]}
+                {
+                    "id_indexador": ["PLD"],
+                    "tenor_days": [252],
+                    "risk_free_rate": [0.10],
+                }
             ).lazy(),
         ),
         MarketSource(
-            "projected_indexes",
-            pl.DataFrame(
-                {"id_indexador": [2], "tenor_days": [252], "projected_index": [106.0]}
-            ).lazy(),
+            "fx_rates",
+            pl.DataFrame({"currency": ["BRL"], "fx_rate": [1.0]}).lazy(),
         ),
     ],
 )
 
-_common = {
-    "notional": 1_000_000.0,
-    "payment_days": 252,
-    "accrual": 1.0,
-    "base_date": date(2026, 6, 3),
-    "fixed_rate": None,
-    "cashflow_amount": None,
-}
-legs = cast(
-    LazyFrame[SwapLegInput],
-    pl.DataFrame(
-        [
-            {
-                "swap_id": "SWP-1",
-                "leg_id": "ativo",
-                "leg_kind": "CDI",
-                "leg_role": "ativo",
-                "leg_weight": 1.0,
-                "id_indexador": 1,
-                "real_coupon": None,
-                **_common,
-            },
-            {
-                "swap_id": "SWP-1",
-                "leg_id": "passivo",
-                "leg_kind": "IPCA",
-                "leg_role": "passivo",
-                "leg_weight": -1.0,
-                "id_indexador": 2,
-                "real_coupon": 0.02,
-                **_common,
-            },
-        ]
-    ).lazy(),
+trades = pl.DataFrame(
+    {
+        "instrument_id": ["ENG-1"],
+        "tenor": [date(2026, 7, 1)],
+        "indexer": ["PLD"],
+        "currency": ["BRL"],
+        "strike": [250.0],
+        "payment_days": [252],
+        "submarket": ["SE"],
+        "incentive": ["I0"],
+        "delivery_period": ["2026-07"],
+    }
+).lazy()
+
+# ---------------------------------------------------------------------------
+# Build a shock two equivalent ways
+# ---------------------------------------------------------------------------
+# MarketPath: lens-lite path into curves.risk_free_rate
+bump_via_path = MarketPath("curves").column("risk_free_rate").modify(lambda r: r + 0.01)
+
+# curve_parallel_shift: canned helper for parallel bumps
+bump_canned = curve_parallel_shift(source="curves", shift=0.01, column="risk_free_rate")
+
+print("Shock (path  ):", bump_via_path.explain())
+print("Shock (canned):", bump_canned.explain())
+
+# Compose multiple shocks associatively (just one here for brevity)
+scenario = Shock.compose(bump_via_path)
+
+# ---------------------------------------------------------------------------
+# Base and stressed prices
+# ---------------------------------------------------------------------------
+base_price = price_energy_forward(trades, market).collect()
+stressed_price = price_energy_forward(trades, market.apply(scenario)).collect()
+
+print("\n=== Base value ===")
+print(base_price.select("instrument_id", "future_value", "present_value", "value"))
+
+print("\n=== Stressed value (+100bp on risk_free) ===")
+print(stressed_price.select("instrument_id", "future_value", "present_value", "value"))
+
+print("\n=== Delta (stressed − base) ===")
+delta = (stressed_price.select("value") - base_price.select("value")).rename(
+    {"value": "delta_value"}
 )
+print(delta)
 
-# A +100bp parallel bump of the zero curve, built two equivalent ways.
-bump = MarketPath("curves").column("zero_rate").modify(lambda r: r + 0.01)
-same_bump = curve_parallel_shift(source="curves", shift=0.01)
-scenario = Shock.compose(bump)  # shocks compose; this one is just the single bump
-
-print("=== swap Structure ===")
-print(swap_structure.explain())
-
-base = price_swaps(legs, market).collect()
-stressed = price_swaps(legs, market.apply(scenario)).collect()
-
-print("\n=== base NPV ===")
-print(base)
-print("\n=== stressed NPV (+100bp) ===")
-print(stressed)
 # The original market is untouched — shocks never mutate.
-print("\noriginal curve still at base level:")
-print(market.source("curves").data.select("id_indexador", "zero_rate").collect())
-print(f"\nshock: {same_bump.explain()}")
+original_rate = market.source("curves").data.select("risk_free_rate").collect().item()
+print(f"\nOriginal risk_free_rate still {original_rate} (no mutation)")

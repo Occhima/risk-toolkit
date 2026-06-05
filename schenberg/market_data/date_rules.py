@@ -112,3 +112,19 @@ def previous_day(anchor: str, *, output_col: str | None = None) -> pl.Expr:
     """One calendar day before the anchor date."""
     expr = pl.col(anchor) - pl.duration(days=1)
     return expr if output_col is None else expr.alias(output_col)
+
+
+def previous_business_day(anchor: str, *, output_col: str | None = None) -> pl.Expr:
+    """One business day before the anchor date (Mon–Fri only, no holiday calendar).
+
+    Uses roll="forward" so non-business-day anchors are snapped forward first.
+    """
+    expr = pl.col(anchor).dt.add_business_days(-1, roll="forward")
+    return expr if output_col is None else expr.alias(output_col)
+
+
+def nth_business_day_next_month(anchor: str, *, n: int, output_col: str | None = None) -> pl.Expr:
+    """The n-th business day of the month following the anchor date."""
+    period = pl.col(anchor).dt.strftime("%Y-%m")
+    expr = nth_business_day_of_following_month(period, n=n)
+    return expr if output_col is None else expr.alias(output_col)

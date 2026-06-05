@@ -5,13 +5,13 @@ sync:
     uv sync --all-groups
 
 format:
-    uv run ruff format .
+    uv run ruff format . --fix
 
 lint:
-    uv run ruff check .
+    uv run ruff check . --fix
 
 typecheck:
-    uv run ty check
+    uv run ty check . --fix
 
 test:
     uv run pytest
