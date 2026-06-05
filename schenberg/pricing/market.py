@@ -53,6 +53,9 @@ class CurveSource:
     def projected_index(self) -> Keyed:
         return self.value("projected_index")
 
+    def risk_free_rate(self) -> Keyed:
+        return self.value("risk_free_rate")
+
 
 @dataclass(frozen=True, slots=True)
 class FixingsSource:

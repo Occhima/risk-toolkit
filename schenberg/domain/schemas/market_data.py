@@ -2,35 +2,35 @@ from __future__ import annotations
 
 from datetime import date
 
-from schenberg.domain.base import DataFrameModel
+from schenberg.domain.base import SchenbergDataFrameModel
 
 
-class DiCurveContract(DataFrameModel):
+class DiCurveContract(SchenbergDataFrameModel):
     curve_name: str
     id_indexador: int
     tenor_days: int
     zero_rate: float
 
 
-class FxRatesContract(DataFrameModel):
+class FxRatesContract(SchenbergDataFrameModel):
     currency: str
     fx_rate: float
 
 
-class EnergyForwardCurveContract(DataFrameModel):
+class EnergyForwardCurveContract(SchenbergDataFrameModel):
     submarket: str
     delivery_period: str
     forward_price: float
     settle_days: int
 
 
-class FixingContract(DataFrameModel):
+class FixingContract(SchenbergDataFrameModel):
     id_indexador: int
     fixing_date: date
     fixing_value: float
 
 
-class VolSurfaceContract(DataFrameModel):
+class VolSurfaceContract(SchenbergDataFrameModel):
     """Implied-volatility quotes on a rectangular (tenor, strike) grid."""
 
     id_indexador: int

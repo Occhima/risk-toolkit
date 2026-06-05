@@ -1,11 +1,13 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, ClassVar
 
 import pandas as pd
 import pandera.polars as pa
 import polars as pl
 from pandera.typing.polars import LazyFrame
+
+from schenberg.domain.rules import ContractRule, collect_rules_from_mro
 
 
 class ContractAdapterMixin:
@@ -30,8 +32,32 @@ class ContractAdapterMixin:
         return cls.from_polars(pl.DataFrame(vectors))
 
 
-class DataFrameModel(ContractAdapterMixin, pa.DataFrameModel):
-    """Base Pandera model for all Schenberg dataframe contracts."""
+class SchenbergDataFrameModel(ContractAdapterMixin, pa.DataFrameModel):
+    """Base Pandera model for all Schenberg dataframe contracts.
+
+    Contract rules declared with ``@rule_for`` are applied in ``validate()``
+    before Pandera schema checks run.  Callers use ``pa.check_types(lazy=True)``
+    on their pricing functions; no manual ``resolve()`` call is needed.
+    """
+
+    __rules__: ClassVar[tuple[ContractRule, ...]] = ()
+
+    @classmethod
+    def resolve(cls, lf: pl.LazyFrame) -> pl.LazyFrame:
+        """Apply all contract rules from the MRO, filling derived coordinates."""
+        for rule in collect_rules_from_mro(cls):
+            lf = rule.apply(lf)
+        return lf
+
+    @classmethod
+    def validate(cls, check_obj: Any, *args: Any, **kwargs: Any) -> Any:
+        if isinstance(check_obj, pl.DataFrame):
+            check_obj = check_obj.lazy()
+
+        if isinstance(check_obj, pl.LazyFrame):
+            check_obj = cls.resolve(check_obj)
+
+        return super().validate(check_obj, *args, **kwargs)
 
     class Config:
         coerce = True

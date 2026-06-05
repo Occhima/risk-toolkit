@@ -90,3 +90,25 @@ def copy_date(
 def with_date_rule(lf: pl.LazyFrame, expr: pl.Expr) -> pl.LazyFrame:
     """Convenience wrapper: apply a date-rule expression to a LazyFrame."""
     return lf.with_columns(expr)
+
+
+# ---- contract-rule date helpers -----------------------------------------
+# These return un-aliased expressions so ContractRule.apply can alias them.
+
+
+def same_day(anchor: str, *, output_col: str | None = None) -> pl.Expr:
+    """Reference the anchor date column unchanged."""
+    expr = pl.col(anchor)
+    return expr if output_col is None else expr.alias(output_col)
+
+
+def add_days(anchor: str, days: int, *, output_col: str | None = None) -> pl.Expr:
+    """Anchor date plus ``days`` calendar days."""
+    expr = pl.col(anchor) + pl.duration(days=days)
+    return expr if output_col is None else expr.alias(output_col)
+
+
+def previous_day(anchor: str, *, output_col: str | None = None) -> pl.Expr:
+    """One calendar day before the anchor date."""
+    expr = pl.col(anchor) - pl.duration(days=1)
+    return expr if output_col is None else expr.alias(output_col)

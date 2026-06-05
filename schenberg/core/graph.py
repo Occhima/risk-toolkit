@@ -149,7 +149,7 @@ class FormulaGraph:
     """The open, typed, applicative pricing engine.
 
     This is the substrate that owns graph topology and Polars compilation;
-    instruments are authored against the typed :class:`PricingGraph` facade, and
+    instruments are authored against the typed :class:`Formula` facade, and
     market data is declared with the
     :class:`~schenberg.market_data.requirements.MarketRequirements` DSL. The engine
     itself accepts already-built market dependencies::
@@ -789,7 +789,7 @@ _OUTPUT_VIEW = "output"
 
 @dataclass(frozen=True, slots=True)
 class Bound:
-    """The pair :meth:`PricingGraph.bind` resolves: the trade frame and the market
+    """The pair :meth:`Formula.bind` resolves: the trade frame and the market
     environment its formulas will read. Construction stays lazy; nothing collects."""
 
     frame: pl.LazyFrame
@@ -797,7 +797,7 @@ class Bound:
 
 
 class _PricingGraphFactory:
-    """What ``PricingGraph[Contract, Requirements, Output]`` evaluates to: a callable
+    """What ``Formula[Contract, Requirements, Output]`` evaluates to: a callable
     that remembers the three type arguments and builds the graph from a name."""
 
     __slots__ = ("_contract", "_requirements", "_output")
@@ -807,8 +807,8 @@ class _PricingGraphFactory:
         self._requirements = requirements
         self._output = output
 
-    def __call__(self, name: str) -> PricingGraph:
-        return PricingGraph(
+    def __call__(self, name: str) -> Formula:
+        return Formula(
             name,
             contract=self._contract,
             requirements=self._requirements,
@@ -816,15 +816,15 @@ class _PricingGraphFactory:
         )
 
 
-class PricingGraph:
+class Formula:
     """A pure, contract-oriented pricing graph over a triple of boundary schemas.
 
-    ``PricingGraph[Contract, Requirements, Output](name)`` builds a graph whose
+    ``Formula[Contract, Requirements, Output](name)`` builds a graph whose
     inputs are ``Contract`` columns, whose market columns are declared by a
     :class:`~schenberg.market_data.requirements.MarketRequirements` subclass, and
-    whose primary result satisfies ``Output``. Formulas read ``g.contract`` and
-    ``g.market`` terms and never join; :meth:`bind` resolves the market environment
-    and :meth:`plan` returns the lazy Polars plan for the whole instrument.
+    whose primary result satisfies ``Output``. Formulas read ``g.input`` /
+    ``g.contract`` and ``g.market`` terms and never join; :meth:`bind` resolves
+    the market environment and :meth:`plan` returns the lazy Polars plan.
 
     A graph publishes its primary ``output`` view with :meth:`returns` and any
     number of secondary typed views with :meth:`view` (e.g. an option's ``price``
@@ -864,8 +864,13 @@ class PricingGraph:
         return _PricingGraphFactory(contract, requirements, output)
 
     @property
+    def input(self) -> _Namespace:
+        """Contract columns as INPUT terms: ``g.input.payment_days``."""
+        return self._g.input
+
+    @property
     def contract(self) -> _Namespace:
-        """Contract columns as INPUT terms: ``g.contract.payment_days``."""
+        """Alias for :attr:`input`: ``g.contract.payment_days``."""
         return self._g.input
 
     @property
@@ -882,16 +887,43 @@ class PricingGraph:
             return self._g.formula(**kwargs)
         return self._g.formula()(fn)
 
-    def returns(self, schema: type[Any] | None = None) -> PricingGraph:
-        """Publish the primary ``output`` view, matching its schema's fields to
-        like-named terms. Defaults to the ``Output`` type parameter."""
-        schema = schema if schema is not None else self._output
-        if schema is None:
-            raise ValueError(f"graph {self.name!r} has no output schema")
-        self._output = schema
-        return self.view(_OUTPUT_VIEW, schema)
+    def returns(
+        self,
+        view_or_schema: str | type[Any] | None = None,
+        schema: type[Any] | None = None,
+        /,
+        **mapping: object,
+    ) -> Formula:
+        """Publish a result view.
 
-    def view(self, name: str, schema: type[Any]) -> PricingGraph:
+        Two call forms are supported:
+
+        * ``g.returns()`` / ``g.returns(OutputSchema)`` — publish the primary
+          ``"output"`` view, matching fields by name.
+        * ``g.returns("view_name", OutputSchema, col=term, ...)`` — publish a
+          named view with an explicit column→term mapping.
+        """
+        if isinstance(view_or_schema, str):
+            view = view_or_schema
+            resolved_schema: type[Any] | None = schema if schema is not None else self._output
+            if resolved_schema is None:
+                raise ValueError(f"graph {self.name!r} has no output schema")
+            self._output = resolved_schema
+            if mapping:
+                self._g.returns(view, resolved_schema, **mapping)
+            else:
+                self.view(view, resolved_schema)
+            return self
+        # Legacy form: returns() or returns(schema)
+        resolved_schema = (
+            view_or_schema if view_or_schema is not None else (schema if schema is not None else self._output)
+        )
+        if resolved_schema is None:
+            raise ValueError(f"graph {self.name!r} has no output schema")
+        self._output = resolved_schema
+        return self.view(_OUTPUT_VIEW, resolved_schema)
+
+    def view(self, name: str, schema: type[Any]) -> Formula:
         """Publish a secondary typed view (``g.view("price", OptionPrice)``).
 
         Like :meth:`returns`, every field is satisfied by the term of the same name

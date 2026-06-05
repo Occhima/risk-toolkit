@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from schenberg.domain.base import DataFrameModel
+from schenberg.domain.base import SchenbergDataFrameModel
 
 
-class OptionTrade(DataFrameModel):
+class OptionTrade(SchenbergDataFrameModel):
     """A vanilla European option priced under generalized Black-Scholes-Merton.
 
     ``option_model`` selects how the cost of carry is formed (see
@@ -21,7 +21,7 @@ class OptionTrade(DataFrameModel):
     payment_days: int
 
 
-class OptionPricing(DataFrameModel):
+class OptionPricing(SchenbergDataFrameModel):
     """Pricing output: the price plus the standardized moneyness terms."""
 
     d1: float
@@ -29,7 +29,7 @@ class OptionPricing(DataFrameModel):
     price: float
 
 
-class OptionGreeks(DataFrameModel):
+class OptionGreeks(SchenbergDataFrameModel):
     """Risk output contract: the five sensitivities attached to a priced option.
 
     Field order is the canonical Greek order shared with the computation layer
@@ -42,7 +42,7 @@ class OptionGreeks(DataFrameModel):
     rho: float
 
 
-class OptionMarketInput(DataFrameModel):
+class OptionMarketInput(SchenbergDataFrameModel):
     """Option trade after graph-declared market data has been attached."""
 
     option_id: str
@@ -56,7 +56,7 @@ class OptionMarketInput(DataFrameModel):
     vol: float
 
 
-class OptionPricedState(DataFrameModel):
+class OptionPricedState(SchenbergDataFrameModel):
     """Internal option state consumed by numeric/autodiff Greek engines."""
 
     option_id: str
@@ -76,7 +76,7 @@ class OptionPricedState(DataFrameModel):
     price: float
 
 
-class OptionPrice(DataFrameModel):
+class OptionPrice(SchenbergDataFrameModel):
     """Public option price output."""
 
     option_id: str
@@ -84,7 +84,7 @@ class OptionPrice(DataFrameModel):
     price: float
 
 
-class OptionPriceWithGreeks(DataFrameModel):
+class OptionPriceWithGreeks(SchenbergDataFrameModel):
     """Public option price output with Greeks."""
 
     option_id: str

@@ -4,10 +4,10 @@ from datetime import date
 
 import pandera.polars as pa
 
-from schenberg.domain.base import DataFrameModel
+from schenberg.domain.base import SchenbergDataFrameModel
 
 
-class SwapLegInput(DataFrameModel):
+class SwapLegInput(SchenbergDataFrameModel):
     """One swap leg as a normalized row.
 
     ``leg_weight`` carries the *position direction* (+1 receive / -1 pay, or a
@@ -31,14 +31,14 @@ class SwapLegInput(DataFrameModel):
     cashflow_amount: float = pa.Field(nullable=True)
 
 
-class SwapOutput(DataFrameModel):
+class SwapOutput(SchenbergDataFrameModel):
     swap_id: str
     npv: float
     ativo_pv: float
     passivo_pv: float
 
 
-class LegPricing(DataFrameModel):
+class LegPricing(SchenbergDataFrameModel):
     """Pure component pricing for one leg — no direction, no sign.
 
     ``pv = cashflow_amount * discount_factor``. The position weight is applied
@@ -51,7 +51,7 @@ class LegPricing(DataFrameModel):
     pv: float
 
 
-class SwapLegStage(DataFrameModel):
+class SwapLegStage(SchenbergDataFrameModel):
     """Structure-stage debug view: pure component pricing plus exposure.
 
     ``weighted_pv = pv * leg_weight`` is the leg's signed contribution to its

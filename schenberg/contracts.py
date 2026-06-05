@@ -1,6 +1,6 @@
 """Public contract surface: dataframe models and the pricer entry-point decorator.
 
-``DataFrameModel`` is the Pandera base every boundary schema extends.
+``SchenbergDataFrameModel`` is the Pandera base every boundary schema extends.
 ``price_function`` marks a top-level pricer and validates its typed LazyFrame
 inputs/outputs lazily, so contract violations surface at ``collect()`` with a
 clear schema error rather than as a downstream column-not-found.
@@ -13,9 +13,9 @@ from typing import Any
 
 import pandera.polars as pa
 
-from schenberg.domain.base import DataFrameModel
+from schenberg.domain.base import SchenbergDataFrameModel
 
-__all__ = ["DataFrameModel", "price_function"]
+__all__ = ["SchenbergDataFrameModel", "price_function"]
 
 
 def price_function[F: Callable[..., Any]](fn: F) -> F:

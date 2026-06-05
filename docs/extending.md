@@ -8,14 +8,14 @@ example.
 
 ## Add a new payoff: write a graph
 
-An instrument is a typed `PricingGraph[Contract, Requirements, Output]`. Declare a
+An instrument is a typed `Formula[Contract, Requirements, Output]`. Declare a
 `MarketRequirements` schema for the market data (one `requires(...)` field per
-market column), wire formulas with `uses` over `g.contract` / `g.market`, and
+market column), wire formulas with `uses` over `g.input` / `g.market`, and
 publish the output:
 
 ```python
 import polars as pl
-from schenberg.core.graph import PricingGraph, Term, uses
+from schenberg.core.graph import Formula, Term, uses
 from schenberg.market_data.requirements import Key, Keyed, MarketRequirements, requires
 
 class MyRequirements(MarketRequirements[MyTrade]):
@@ -24,8 +24,8 @@ class MyRequirements(MarketRequirements[MyTrade]):
         Keyed("a_curve", "price", (Key("tenor", quote_col="tenor_days", default="payment_days"),))
     )
 
-g = PricingGraph[MyTrade, MyRequirements, MyPricing]("my_instrument")
-c, m = g.contract, g.market
+g = Formula[MyTrade, MyRequirements, MyPricing]("my_instrument")
+c, m = g.input, g.market
 
 @g.formula(name="value")
 def payoff(fwd: Term[float] = uses(m.forward_price), k: Term[float] = uses(c.strike)) -> pl.Expr:
@@ -161,6 +161,47 @@ priced_positions = with_prices(positions, all_prices)
 quantity, side`.  The output of `price_structures` has the same shape as
 any other `InstrumentPrice` frame (`instrument_type, instrument_id, price`)
 with `instrument_type = "STRUCTURE"`.
+
+## Contract rules and derived contractual coordinates
+
+Contractual coordinates (`index_fixing_date`, `currency_fixing_date`,
+`projection_date`, …) differ from market values: they are determined by the
+*contract terms*, not by the market.  Declare them with `@rule_for` on a
+`SchenbergDataFrameModel` subclass or mixin; `validate()` resolves them
+automatically before Pandera checks run.
+
+```python
+from schenberg.domain.base import SchenbergDataFrameModel
+from schenberg.domain.rules import rule_for
+from schenberg.market_data import date_rules as dates
+
+class IndexerFixingMixin(SchenbergDataFrameModel):
+    indexer: IndexerEnum
+    index_fixing_date: date | None = None
+
+    @rule_for("index_fixing_date", selector="indexer", value=IndexerEnum.CPI)
+    def _cpi(cls):
+        return dates.add_days("tenor", 5)
+
+    @rule_for("index_fixing_date", selector="indexer", default=True)
+    def _default(cls):
+        return dates.same_day("tenor")
+```
+
+**Key rules:**
+
+* Use `SchenbergDataFrameModel` as the base class for every boundary schema.
+* Mixins can declare rules; multiple mixins compose cleanly — each output/selector
+  pair is independent.
+* User-provided non-null values are always preserved (coalesce semantics).
+* Null or missing values are filled lazily — no `.collect()` is called.
+* `pa.check_types(lazy=True)` on pricing functions is the only annotation needed;
+  no extra decorator and no manual `resolve()` call.
+* Formula graphs never compute fixing dates — they only read market values.
+* `MarketSnapshot` provides market *values* at contractual *coordinates*; it does
+  not derive the coordinates themselves.
+* Child schemas can override a parent's rule case for the same
+  `(output, selector, value)` triple by redeclaring it.
 
 ## Checklist
 

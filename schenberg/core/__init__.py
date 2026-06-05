@@ -3,7 +3,7 @@ market dependencies, diagnostics, and workflows."""
 
 from schenberg.core.diagnostics import Diagnostic, DiagnosticReport
 from schenberg.core.fold import Agg, Fold, count_, first_, lit_, sum_
-from schenberg.core.graph import FormulaGraph, Term, TermKind, uses
+from schenberg.core.graph import Formula, FormulaGraph, Term, TermKind, uses
 from schenberg.core.market import MarketDependency, MarketRead, MarketRequirement
 from schenberg.core.pipeline import Workflow
 from schenberg.core.router import Router
@@ -14,6 +14,7 @@ __all__ = [
     "Diagnostic",
     "DiagnosticReport",
     "Fold",
+    "Formula",
     "FormulaGraph",
     "MarketDependency",
     "MarketRead",

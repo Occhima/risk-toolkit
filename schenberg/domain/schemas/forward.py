@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from datetime import date
 
-from schenberg.domain.base import DataFrameModel
+from schenberg.domain.base import SchenbergDataFrameModel
 
 
-class ForwardTrade(DataFrameModel):
+class ForwardTrade(SchenbergDataFrameModel):
     instrument_id: str
     instrument_type: str
     forward_family: str
@@ -32,7 +32,7 @@ class EnergyForwardLeg(ForwardTrade):
     fixing_date: date
 
 
-class ForwardPricing(DataFrameModel):
+class ForwardPricing(SchenbergDataFrameModel):
     """Reusable pricing output for forward-like instruments."""
 
     future_value: float

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from schenberg.domain.base import DataFrameModel
+from schenberg.domain.base import SchenbergDataFrameModel
 
 
-class StructureLeg(DataFrameModel):
+class StructureLeg(SchenbergDataFrameModel):
     """One component leg of a structured product."""
 
     structure_id: str

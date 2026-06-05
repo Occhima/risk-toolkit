@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from schenberg.domain.base import DataFrameModel
+from schenberg.domain.base import SchenbergDataFrameModel
 
 
-class Position(DataFrameModel):
+class Position(SchenbergDataFrameModel):
     position_id: str
     book: str
     instrument_type: str
@@ -12,7 +12,7 @@ class Position(DataFrameModel):
     side: float
 
 
-class InstrumentPrice(DataFrameModel):
+class InstrumentPrice(SchenbergDataFrameModel):
     instrument_type: str
     instrument_id: str
     price: float

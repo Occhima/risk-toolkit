@@ -7,7 +7,7 @@ These tests pin the behaviour the requirements DSL promises:
 * ``.by`` is optional -- a read carries typed default key columns,
 * a join key pointed at a non-existent contract column fails at class creation,
 * an interpolated read (a vol surface) compiles to an InterpolatedRequirement,
-* a :class:`PricingGraph` is a Computation: it publishes typed views, and prices a
+* a :class:`Formula` is a Computation: it publishes typed views, and prices a
   bound book into one lazy plan.
 """
 
@@ -17,8 +17,8 @@ from datetime import date
 
 import polars as pl
 import pytest
-from schenberg.contracts import DataFrameModel, price_function
-from schenberg.core.graph import PricingGraph, Term, uses
+from schenberg.contracts import SchenbergDataFrameModel, price_function
+from schenberg.core.graph import Formula, Term, uses
 from schenberg.market_data.requirements import MarketRequirements, contract, requires
 from schenberg.market_data.snapshot import MarketSnapshot
 from schenberg.market_data.sources import MarketSource
@@ -26,7 +26,7 @@ from schenberg.pricing.market import CURVES, DI, FIXINGS, VOL
 
 
 def test_keyed_requirement_compiles_to_join() -> None:
-    class Trade(DataFrameModel):
+    class Trade(SchenbergDataFrameModel):
         id_indexador: int
         payment_days: int
 
@@ -41,7 +41,7 @@ def test_keyed_requirement_compiles_to_join() -> None:
 
 
 def test_by_overrides_only_the_named_key() -> None:
-    class Trade(DataFrameModel):
+    class Trade(SchenbergDataFrameModel):
         id_indexador: int
         settle_days: int
 
@@ -59,7 +59,7 @@ def test_unknown_join_key_rejected_at_declaration() -> None:
 
 
 def test_bad_contract_column_fails_fast_at_class_creation() -> None:
-    class Trade(DataFrameModel):
+    class Trade(SchenbergDataFrameModel):
         id_indexador: int
         payment_days: int
 
@@ -70,7 +70,7 @@ def test_bad_contract_column_fails_fast_at_class_creation() -> None:
 
 
 def test_interpolated_requirement_compiles() -> None:
-    class Trade(DataFrameModel):
+    class Trade(SchenbergDataFrameModel):
         id_indexador: int
         payment_days: int
         strike: float
@@ -85,7 +85,7 @@ def test_interpolated_requirement_compiles() -> None:
 
 
 def test_pricing_graph_is_a_typed_computation() -> None:
-    class Trade(DataFrameModel):
+    class Trade(SchenbergDataFrameModel):
         trade_id: str
         notional: float
         id_indexador: int
@@ -94,11 +94,11 @@ def test_pricing_graph_is_a_typed_computation() -> None:
     class Reqs(MarketRequirements[Trade]):
         zero_rate: Term[float] = requires(CURVES.zero_rate())
 
-    class Out(DataFrameModel):
+    class Out(SchenbergDataFrameModel):
         trade_id: str
         present_value: float
 
-    g = PricingGraph[Trade, Reqs, Out]("toy")
+    g = Formula[Trade, Reqs, Out]("toy")
     c, m = g.contract, g.market
 
     @g.formula

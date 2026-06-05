@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from schenberg.domain.base import DataFrameModel
+from schenberg.domain.base import SchenbergDataFrameModel
 from schenberg.domain.schemas.forward import EnergyForwardLeg, ForwardPricing, ForwardTrade
 from schenberg.domain.schemas.market_data import (
     DiCurveContract,
@@ -20,7 +20,7 @@ from schenberg.domain.schemas.swap import (
 )
 
 __all__ = [
-    "DataFrameModel",
+    "SchenbergDataFrameModel",
     "DiCurveContract",
     "EnergyForwardCurveContract",
     "EnergyForwardLeg",

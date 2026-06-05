@@ -13,13 +13,13 @@ from typing import cast
 import polars as pl
 import pytest
 from schenberg.core.graph import FormulaGraph, Term, TermKind, uses
-from schenberg.domain.base import DataFrameModel
+from schenberg.domain.base import SchenbergDataFrameModel
 from schenberg.market_data.snapshot import MarketSnapshot
 from schenberg.market_data.sources import MarketSource
 from schenberg.pricing.market import CURVES
 
 
-class Trade(DataFrameModel):
+class Trade(SchenbergDataFrameModel):
     trade_id: str
     spot: float
     strike: float
@@ -27,7 +27,7 @@ class Trade(DataFrameModel):
     id_indexador: int
 
 
-class Priced(DataFrameModel):
+class Priced(SchenbergDataFrameModel):
     trade_id: str
     price: float
 
