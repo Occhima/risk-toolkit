@@ -947,6 +947,9 @@ class PricingGraph:
     def to_mermaid(self, *, view: str = _OUTPUT_VIEW, **kwargs: Any) -> str:
         return self._g.to_mermaid(view=view, **kwargs)
 
+    def info(self, *, view: str = _OUTPUT_VIEW) -> GraphInfo:
+        return self._g.info(view=view)
+
     def topological_order(self) -> list[str]:
         return self._g.topological_order()
 

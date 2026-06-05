@@ -17,7 +17,7 @@ from dataclasses import dataclass
 
 import polars as pl
 
-from schenberg.core.graph import FormulaGraph, Term, uses
+from schenberg.core.graph import PricingGraph, Term, uses
 from schenberg.domain.enums import OptionKind
 from schenberg.math.expressions import norm_cdf_expr, norm_pdf_expr
 
@@ -32,7 +32,7 @@ class GreekTerms:
 
 
 def bsm_greeks_terms(
-    g: FormulaGraph,
+    g: PricingGraph,
     *,
     option_kind: Term[str],
     spot: Term[float],

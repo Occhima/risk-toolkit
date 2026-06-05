@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import polars as pl
 
-from schenberg.core.graph import PricingGraph, Term, uses
+from schenberg.core.graph import PricingGraph, uses
 from schenberg.domain.enums import SwapLegKind
 from schenberg.domain.schemas import LegPricing, SwapLegInput
 from schenberg.pricing.discounting import year_fraction_term

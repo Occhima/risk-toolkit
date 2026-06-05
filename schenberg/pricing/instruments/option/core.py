@@ -18,7 +18,7 @@ from dataclasses import dataclass
 
 import polars as pl
 
-from schenberg.core.graph import FormulaGraph, Term, uses
+from schenberg.core.graph import PricingGraph, Term, uses
 from schenberg.domain.enums import OptionKind
 from schenberg.math.expressions import norm_cdf_expr, year_fraction_252_expr
 
@@ -35,7 +35,7 @@ class BsmTerms:
     price: Term[float]
 
 
-def year_fraction_term(g: FormulaGraph, *, payment_days: Term[int]) -> Term[float]:
+def year_fraction_term(g: PricingGraph, *, payment_days: Term[int]) -> Term[float]:
     @g.formula(
         tags=("time",),
         symbol="T",
@@ -49,7 +49,7 @@ def year_fraction_term(g: FormulaGraph, *, payment_days: Term[int]) -> Term[floa
 
 
 def bsm_terms(
-    g: FormulaGraph,
+    g: PricingGraph,
     *,
     kind: OptionKind,
     spot: Term[float],

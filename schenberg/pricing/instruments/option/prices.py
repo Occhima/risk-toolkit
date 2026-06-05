@@ -58,7 +58,7 @@ def price_options_with_greeks(
     """Price a book of options and attach delta, gamma, vega, theta and rho."""
     backend = GreeksBackend(backend)
     if backend is GreeksBackend.CLOSED_FORM:
-        priced = option_risk_router.compute(options, market=market, view="risk")
+        priced = option_risk_router.compute(options, market=market, view="output")
     else:
         state = _price_option_state(options, market)
         priced = GreeksEngine(backend).attach(state)
