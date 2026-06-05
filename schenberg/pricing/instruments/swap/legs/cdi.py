@@ -8,28 +8,31 @@ from __future__ import annotations
 
 import polars as pl
 
-from schenberg.core.graph import FormulaGraph, uses
+from schenberg.core.graph import PricingGraph, Term, uses
 from schenberg.domain.enums import SwapLegKind
-from schenberg.domain.schemas import SwapLegInput
+from schenberg.domain.schemas import LegPricing, SwapLegInput
+from schenberg.market_data.requirements import MarketRequirements, requires
 from schenberg.pricing.discounting import year_fraction_term
 from schenberg.pricing.instruments.swap.generic import assemble_leg
-from schenberg.pricing.instruments.swap.legs.registry import CURVES, register
+from schenberg.pricing.instruments.swap.legs.registry import register
+from schenberg.pricing.market import CURVES
 
 
-def _build() -> FormulaGraph:
-    g = FormulaGraph("cdi_swap_leg", input=SwapLegInput)
-    t = g.input
-    m = g.market(
-        zero_rate=CURVES.value("zero_rate", indexer=t.id_indexador, tenor=t.payment_days),
-        forward_rate=CURVES.value("forward_rate", indexer=t.id_indexador, tenor=t.payment_days),
-    )
-    year_fraction = year_fraction_term(g, payment_days=t.payment_days)
+class CdiLegRequirements(MarketRequirements[SwapLegInput]):
+    zero_rate: Term[float] = requires(CURVES.zero_rate())
+    forward_rate: Term[float] = requires(CURVES.forward_rate())
+
+
+def _build() -> PricingGraph:
+    g = PricingGraph[SwapLegInput, CdiLegRequirements, LegPricing]("cdi_swap_leg")
+    c, m = g.contract, g.market
+    year_fraction = year_fraction_term(g, payment_days=c.payment_days)
 
     @g.formula(tags=("cashflow", "cdi"))
     def cashflow_amount(
-        notional: pl.Expr = uses(t.notional),
+        notional: pl.Expr = uses(c.notional),
         forward_rate: pl.Expr = uses(m.forward_rate),
-        accrual: pl.Expr = uses(t.accrual),
+        accrual: pl.Expr = uses(c.accrual),
     ) -> pl.Expr:
         return notional * forward_rate * accrual
 

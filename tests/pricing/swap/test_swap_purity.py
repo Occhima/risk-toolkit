@@ -102,13 +102,13 @@ def test_pure_leg_pv_is_invariant_to_leg_weight() -> None:
     receive = cast(
         pl.DataFrame,
         fixed_swap_leg_graph.compute(
-            _fixed_leg(leg_weight=1.0, leg_role="ativo"), market=market, view="pricing"
+            _fixed_leg(leg_weight=1.0, leg_role="ativo"), market=market, view="output"
         ).collect(),
     )
     pay = cast(
         pl.DataFrame,
         fixed_swap_leg_graph.compute(
-            _fixed_leg(leg_weight=-1.0, leg_role="passivo"), market=market, view="pricing"
+            _fixed_leg(leg_weight=-1.0, leg_role="passivo"), market=market, view="output"
         ).collect(),
     )
 

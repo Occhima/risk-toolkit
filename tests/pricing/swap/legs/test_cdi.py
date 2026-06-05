@@ -48,7 +48,7 @@ def test_cdi_leg_pricing_preserves_formula() -> None:
 
     out = cast(
         pl.DataFrame,
-        cdi_swap_leg_graph.compute(leg, market=market, view="pricing").collect(),
+        cdi_swap_leg_graph.compute(leg, market=market, view="output").collect(),
     )
 
     assert out.select("cashflow_amount").item() == pytest.approx(120_000.0)

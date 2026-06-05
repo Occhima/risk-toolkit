@@ -946,3 +946,13 @@ class PricingGraph:
 
     def to_mermaid(self, *, view: str = _OUTPUT_VIEW, **kwargs: Any) -> str:
         return self._g.to_mermaid(view=view, **kwargs)
+
+    def topological_order(self) -> list[str]:
+        return self._g.topological_order()
+
+    def required_inputs(self) -> set[str]:
+        """The contract/market-key columns a caller must supply."""
+        return self._g.required_inputs()
+
+    def dependencies_of(self, target: str | Term[Any]) -> set[str]:
+        return self._g.dependencies_of(target)
