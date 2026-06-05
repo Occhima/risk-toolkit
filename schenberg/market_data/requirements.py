@@ -39,6 +39,7 @@ from typing import Any, ClassVar, get_args
 from schenberg.core.columns import ColumnBinding, ColumnSet
 from schenberg.core.graph import Term, TermKind
 from schenberg.core.market import MarketDependency, MarketRequirement
+from schenberg.market_data.interpolated import InterpolatedRequirement
 
 
 @dataclass(frozen=True, slots=True)
@@ -144,13 +145,77 @@ class Keyed:
 
 
 @dataclass(frozen=True, slots=True)
+class Interpolated:
+    """A fluent interpolated read: a value interpolated at each row's coordinates
+    on a quoted grid (an implied-vol surface, a curve read between tenors).
+
+    ``group`` is the exact-match key that selects one grid; ``axes`` are the
+    ascending coordinates interpolated along (1-D linear, 2-D bilinear). ``.by``
+    and :meth:`finalize` mirror :class:`Keyed`, but compile to the engine's
+    :class:`InterpolatedRequirement`.
+    """
+
+    table: str
+    value_col: str
+    group: Key
+    axes: tuple[Key, ...]
+    overrides: tuple[tuple[str, str], ...] = ()
+
+    @property
+    def _keys(self) -> tuple[Key, ...]:
+        return (self.group, *self.axes)
+
+    def by(self, **bindings: ContractRef | str) -> Interpolated:
+        known = {k.name for k in self._keys}
+        unknown = sorted(set(bindings) - known)
+        if unknown:
+            raise ValueError(
+                f"{self.table}.{self.value_col}: unknown axis/group key(s) {unknown}; "
+                f"this read keys on {sorted(known)}"
+            )
+        merged = dict(self.overrides)
+        merged.update({name: _ref_name(ref) for name, ref in bindings.items()})
+        return replace(self, overrides=tuple(merged.items()))
+
+    def finalize(
+        self,
+        output: str,
+        *,
+        schema_columns: set[str] | None = None,
+        where: str = "",
+    ) -> InterpolatedRequirement:
+        over = dict(self.overrides)
+
+        def left_of(key: Key) -> str:
+            left = over.get(key.name, key.default)
+            if schema_columns is not None and left not in schema_columns:
+                raise ValueError(
+                    f"{where}: key {key.name!r} maps to contract column {left!r}, "
+                    f"which is not a column of the contract schema"
+                )
+            return left
+
+        return InterpolatedRequirement(
+            table=self.table,
+            group=(left_of(self.group), self.group.quote_col),
+            axes=tuple((left_of(axis), axis.quote_col) for axis in self.axes),
+            value_col=self.value_col,
+            output=output,
+        )
+
+
+# A fluent read that resolves to an attachable market dependency.
+Read = Keyed | Interpolated
+
+
+@dataclass(frozen=True, slots=True)
 class Requirement:
     """The value a class field holds before resolution: a wrapped fluent read."""
 
-    read: Keyed
+    read: Read
 
 
-def requires(read: Keyed) -> Any:
+def requires(read: Read) -> Any:
     """Declare a market requirement field. Returns ``Any`` so the field can carry a
     clean ``Term[float]`` annotation while holding the read until the class is
     built."""

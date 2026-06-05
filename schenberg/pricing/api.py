@@ -29,4 +29,4 @@ def price_forwards(forwards: pl.LazyFrame, market: MarketSnapshot) -> pl.LazyFra
 
 
 def compute_forward_pricing_rows(forwards: pl.LazyFrame, market: MarketSnapshot) -> pl.LazyFrame:
-    return forward_router.compute(forwards, market=market, view="pricing")
+    return forward_router.compute(forwards, market=market, view="output")

@@ -822,12 +822,21 @@ class PricingGraph:
     ``PricingGraph[Contract, Requirements, Output](name)`` builds a graph whose
     inputs are ``Contract`` columns, whose market columns are declared by a
     :class:`~schenberg.market_data.requirements.MarketRequirements` subclass, and
-    whose result satisfies ``Output``. Formulas read ``g.contract`` and ``g.market``
-    terms and never join; :meth:`bind` resolves the market environment and
-    :meth:`plan` returns the lazy Polars plan for the whole instrument.
+    whose primary result satisfies ``Output``. Formulas read ``g.contract`` and
+    ``g.market`` terms and never join; :meth:`bind` resolves the market environment
+    and :meth:`plan` returns the lazy Polars plan for the whole instrument.
 
-    It is a thin face over :class:`FormulaGraph`: the requirements compile to the
-    same :class:`MarketDependency` objects ``FormulaGraph.market`` already attaches.
+    A graph publishes its primary ``output`` view with :meth:`returns` and any
+    number of secondary typed views with :meth:`view` (e.g. an option's ``price``
+    and ``state``). Every view is satisfied *by name*: a schema field is filled by
+    the contract, market or formula term of the same name -- no column mapping. As
+    a :class:`Computation` (``compute`` / ``has_view`` / ``view_schema``) it slots
+    directly into a :class:`~schenberg.core.router.Router` or
+    :class:`~schenberg.core.structure.Structure`.
+
+    It is a typed face over :class:`FormulaGraph` -- the private engine that owns
+    topology and Polars compilation; the requirements compile to the same
+    :class:`MarketDependency` objects the engine attaches.
     """
 
     def __init__(
@@ -873,15 +882,26 @@ class PricingGraph:
             return self._g.formula(**kwargs)
         return self._g.formula()(fn)
 
-    def returns(self) -> PricingGraph:
-        """Publish the output view by matching ``Output`` fields to like-named terms."""
-        if self._output is None:
+    def returns(self, schema: type[Any] | None = None) -> PricingGraph:
+        """Publish the primary ``output`` view, matching its schema's fields to
+        like-named terms. Defaults to the ``Output`` type parameter."""
+        schema = schema if schema is not None else self._output
+        if schema is None:
             raise ValueError(f"graph {self.name!r} has no output schema")
-        fields = list(cast(Any, self._output).to_schema().columns.keys())
+        self._output = schema
+        return self.view(_OUTPUT_VIEW, schema)
+
+    def view(self, name: str, schema: type[Any]) -> PricingGraph:
+        """Publish a secondary typed view (``g.view("price", OptionPrice)``).
+
+        Like :meth:`returns`, every field is satisfied by the term of the same name
+        -- contract column, market column or formula -- so no mapping is written.
+        """
+        fields = list(cast(Any, schema).to_schema().columns.keys())
         for column in fields:
             if column not in self._g._indices and column in self._contract_names:
                 self._g._input_term(column)  # pass-through contract column
-        self._g.returns(_OUTPUT_VIEW, self._output)
+        self._g.returns(name, schema)
         return self
 
     def bind(
@@ -894,15 +914,35 @@ class PricingGraph:
         frame = trades.lazy() if isinstance(trades, pl.DataFrame) else trades
         return Bound(frame=frame, market=market)
 
-    def plan(self, bound: Bound) -> pl.LazyFrame:
-        """The lazy Polars plan for the bound trades, projected to the output schema."""
-        fields = list(cast(Any, self._output).to_schema().columns.keys())
-        planned = self._g.compute(bound.frame, market=bound.market, view=_OUTPUT_VIEW)
-        return planned.select(fields)
+    def plan(self, bound: Bound, *, view: str = _OUTPUT_VIEW) -> pl.LazyFrame:
+        """The lazy Polars plan for the bound trades, projected to a view's schema."""
+        schema = self._g.view_schema(view)
+        planned = self._g.compute(bound.frame, market=bound.market, view=view)
+        if schema is None:
+            return planned
+        return planned.select(list(cast(Any, schema).to_schema().columns.keys()))
+
+    # ---- Computation protocol (router / structure branch) ----------------
+    def compute(
+        self,
+        frame: pl.LazyFrame,
+        *,
+        market: MarketSnapshot | None = None,
+        view: str = _OUTPUT_VIEW,
+    ) -> pl.LazyFrame:
+        """Interpret a view as lazy Polars, carrying input columns through (for a
+        router/structure to weight, fold or normalize). Stays lazy."""
+        return self._g.compute(frame, market=market, view=view)
+
+    def has_view(self, view: str) -> bool:
+        return self._g.has_view(view)
+
+    def view_schema(self, view: str) -> object | None:
+        return self._g.view_schema(view)
 
     # Introspection passthroughs -- the same declaration explains itself.
-    def explain(self, **kwargs: Any) -> str:
-        return self._g.explain(view=_OUTPUT_VIEW, **kwargs)
+    def explain(self, *, view: str = _OUTPUT_VIEW, **kwargs: Any) -> str:
+        return self._g.explain(view=view, **kwargs)
 
-    def to_mermaid(self, **kwargs: Any) -> str:
-        return self._g.to_mermaid(view=_OUTPUT_VIEW, **kwargs)
+    def to_mermaid(self, *, view: str = _OUTPUT_VIEW, **kwargs: Any) -> str:
+        return self._g.to_mermaid(view=view, **kwargs)

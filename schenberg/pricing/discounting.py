@@ -17,14 +17,14 @@ from __future__ import annotations
 
 import polars as pl
 
-from schenberg.core.graph import FormulaGraph, Term, uses
+from schenberg.core.graph import PricingGraph, Term, uses
 from schenberg.math.expressions import (
     continuous_discount_factor_expr,
     year_fraction_252_expr,
 )
 
 
-def year_fraction_term(g: FormulaGraph, *, payment_days: Term[int]) -> Term[float]:
+def year_fraction_term(g: PricingGraph, *, payment_days: Term[int]) -> Term[float]:
     @g.formula(
         tags=("time",),
         symbol="T",
@@ -38,7 +38,7 @@ def year_fraction_term(g: FormulaGraph, *, payment_days: Term[int]) -> Term[floa
 
 
 def discount_factor_term(
-    g: FormulaGraph, *, zero_rate: Term[float], year_fraction: Term[float]
+    g: PricingGraph, *, zero_rate: Term[float], year_fraction: Term[float]
 ) -> Term[float]:
     @g.formula(
         tags=("discounting",),
@@ -53,7 +53,7 @@ def discount_factor_term(
 
 
 def present_value_term(
-    g: FormulaGraph, *, future_value: Term[float], discount_factor: Term[float], name: str = "pv"
+    g: PricingGraph, *, future_value: Term[float], discount_factor: Term[float], name: str = "pv"
 ) -> Term[float]:
     @g.formula(
         name=name,
