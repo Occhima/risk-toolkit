@@ -34,6 +34,7 @@ dev = [
   "schenberg-distributed",
   "mkdocs-material>=9.5",
   "mkdocstrings[python]>=0.29",
+  "marimo>=0.9",
 ]
 
 [project.optional-dependencies]
@@ -42,6 +43,7 @@ dev = [
   "ruff>=0.12",
   "ty>=0.0.1a16",
   "poethepoet>=0.36",
+  "marimo>=0.9",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -64,6 +66,12 @@ select = ["E", "F", "I", "UP", "B", "SIM", "PL"]
 # B008: the Term DSL deliberately puts ``uses(term)`` calls in formula parameter
 # defaults — that default *is* the graph dependency, so the call is by design.
 ignore = ["PLR0913", "B008"]
+
+[tool.ruff.lint.per-file-ignores]
+# marimo notebooks are cell-DAGs of identically-named ``def _`` functions whose
+# last expression is the cell's display value; that idiom is the notebook format,
+# not a smell.
+"examples/notebooks/*.py" = ["F811", "B018", "PLR1711", "PLR0913", "PLR2004", "PLC0415", "I001"]
 
 [tool.ruff.format]
 quote-style = "double"

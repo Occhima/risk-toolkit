@@ -146,18 +146,19 @@ class _Namespace:
 
 
 class FormulaGraph:
-    """An open, typed, applicative pricing graph.
+    """The open, typed, applicative pricing engine.
 
-    Declare a graph over an input schema, name the market data it reads, and wire
-    its formulas with explicit term dependencies::
+    This is the substrate that owns graph topology and Polars compilation;
+    instruments are authored against the typed :class:`PricingGraph` facade, and
+    market data is declared with the
+    :class:`~schenberg.market_data.requirements.MarketRequirements` DSL. The engine
+    itself accepts already-built market dependencies::
 
         g = FormulaGraph("generalized_call", input=OptionTrade)
         t = g.input
         m = g.market(
-            rate=CurveSpec("curves").value("zero_rate", indexer=t.id_indexador,
-                                           tenor=t.payment_days),
-            vol=VolSurfaceSpec("vol_surface").implied_vol(indexer=t.id_indexador,
-                                           tenor=t.payment_days, strike=t.strike),
+            rate=CURVES.zero_rate().finalize("rate"),
+            vol=VOL.implied_vol().finalize("vol"),
         )
 
         @g.formula(symbol="T", latex=r"\\frac{d}{252}")
@@ -216,9 +217,8 @@ class FormulaGraph:
         for use in :func:`uses` defaults::
 
             m = g.market(
-                rate=CurveSpec("curves").value("zero_rate", indexer=t.id_indexador,
-                                               tenor=t.payment_days),
-                vol=VolSurfaceSpec("vol_surface").implied_vol(...),
+                rate=CURVES.zero_rate().finalize("rate"),
+                vol=VOL.implied_vol().finalize("vol"),
             )
 
         A pre-built dependency that writes several columns at once (a multi-output
@@ -780,3 +780,182 @@ class FormulaGraph:
         return {
             col: self._graph[self._indices[node]].dtype for col, node in self._views[view].items()
         }
+
+
+# ---- contract-oriented facade -------------------------------------------------
+
+_OUTPUT_VIEW = "output"
+
+
+@dataclass(frozen=True, slots=True)
+class Bound:
+    """The pair :meth:`PricingGraph.bind` resolves: the trade frame and the market
+    environment its formulas will read. Construction stays lazy; nothing collects."""
+
+    frame: pl.LazyFrame
+    market: MarketSnapshot | None
+
+
+class _PricingGraphFactory:
+    """What ``PricingGraph[Contract, Requirements, Output]`` evaluates to: a callable
+    that remembers the three type arguments and builds the graph from a name."""
+
+    __slots__ = ("_contract", "_requirements", "_output")
+
+    def __init__(self, contract: Any, requirements: Any, output: Any) -> None:
+        self._contract = contract
+        self._requirements = requirements
+        self._output = output
+
+    def __call__(self, name: str) -> PricingGraph:
+        return PricingGraph(
+            name,
+            contract=self._contract,
+            requirements=self._requirements,
+            output=self._output,
+        )
+
+
+class PricingGraph:
+    """A pure, contract-oriented pricing graph over a triple of boundary schemas.
+
+    ``PricingGraph[Contract, Requirements, Output](name)`` builds a graph whose
+    inputs are ``Contract`` columns, whose market columns are declared by a
+    :class:`~schenberg.market_data.requirements.MarketRequirements` subclass, and
+    whose primary result satisfies ``Output``. Formulas read ``g.contract`` and
+    ``g.market`` terms and never join; :meth:`bind` resolves the market environment
+    and :meth:`plan` returns the lazy Polars plan for the whole instrument.
+
+    A graph publishes its primary ``output`` view with :meth:`returns` and any
+    number of secondary typed views with :meth:`view` (e.g. an option's ``price``
+    and ``state``). Every view is satisfied *by name*: a schema field is filled by
+    the contract, market or formula term of the same name -- no column mapping. As
+    a :class:`Computation` (``compute`` / ``has_view`` / ``view_schema``) it slots
+    directly into a :class:`~schenberg.core.router.Router` or
+    :class:`~schenberg.core.structure.Structure`.
+
+    It is a typed face over :class:`FormulaGraph` -- the private engine that owns
+    topology and Polars compilation; the requirements compile to the same
+    :class:`MarketDependency` objects the engine attaches.
+    """
+
+    def __init__(
+        self,
+        name: str,
+        *,
+        contract: type[Any] | None = None,
+        requirements: Any | None = None,
+        output: type[Any] | None = None,
+    ) -> None:
+        self.name = name
+        self._contract = contract
+        self._output = output
+        self._g = FormulaGraph(name, input=contract)
+        self._contract_names = (
+            set(cast(Any, contract).to_schema().columns.keys()) if contract is not None else set()
+        )
+        reqs: dict[str, MarketDependency] = (
+            dict(getattr(requirements, "__requirements__", {})) if requirements is not None else {}
+        )
+        self._market_ns: _Namespace | None = self._g.market(**reqs) if reqs else None
+
+    def __class_getitem__(cls, item: tuple[Any, Any, Any]) -> _PricingGraphFactory:
+        contract, requirements, output = item
+        return _PricingGraphFactory(contract, requirements, output)
+
+    @property
+    def contract(self) -> _Namespace:
+        """Contract columns as INPUT terms: ``g.contract.payment_days``."""
+        return self._g.input
+
+    @property
+    def market(self) -> _Namespace:
+        """Declared market columns as MARKET terms: ``g.market.zero_rate``."""
+        if self._market_ns is None:
+            raise AttributeError(f"graph {self.name!r} declares no market requirements")
+        return self._market_ns
+
+    def formula(self, fn: FormulaFn | None = None, /, **kwargs: Any) -> Any:
+        """Register a formula. Works bare (``@g.formula``) or parameterized
+        (``@g.formula(symbol=...)``); dependencies come from ``uses(...)`` defaults."""
+        if fn is None:
+            return self._g.formula(**kwargs)
+        return self._g.formula()(fn)
+
+    def returns(self, schema: type[Any] | None = None) -> PricingGraph:
+        """Publish the primary ``output`` view, matching its schema's fields to
+        like-named terms. Defaults to the ``Output`` type parameter."""
+        schema = schema if schema is not None else self._output
+        if schema is None:
+            raise ValueError(f"graph {self.name!r} has no output schema")
+        self._output = schema
+        return self.view(_OUTPUT_VIEW, schema)
+
+    def view(self, name: str, schema: type[Any]) -> PricingGraph:
+        """Publish a secondary typed view (``g.view("price", OptionPrice)``).
+
+        Like :meth:`returns`, every field is satisfied by the term of the same name
+        -- contract column, market column or formula -- so no mapping is written.
+        """
+        fields = list(cast(Any, schema).to_schema().columns.keys())
+        for column in fields:
+            if column not in self._g._indices and column in self._contract_names:
+                self._g._input_term(column)  # pass-through contract column
+        self._g.returns(name, schema)
+        return self
+
+    def bind(
+        self,
+        trades: pl.LazyFrame | pl.DataFrame,
+        *,
+        market: MarketSnapshot | None = None,
+    ) -> Bound:
+        """Resolve the market environment for a set of trades. Stays lazy."""
+        frame = trades.lazy() if isinstance(trades, pl.DataFrame) else trades
+        return Bound(frame=frame, market=market)
+
+    def plan(self, bound: Bound, *, view: str = _OUTPUT_VIEW) -> pl.LazyFrame:
+        """The lazy Polars plan for the bound trades, projected to a view's schema."""
+        schema = self._g.view_schema(view)
+        planned = self._g.compute(bound.frame, market=bound.market, view=view)
+        if schema is None:
+            return planned
+        return planned.select(list(cast(Any, schema).to_schema().columns.keys()))
+
+    # ---- Computation protocol (router / structure branch) ----------------
+    def compute(
+        self,
+        frame: pl.LazyFrame,
+        *,
+        market: MarketSnapshot | None = None,
+        view: str = _OUTPUT_VIEW,
+    ) -> pl.LazyFrame:
+        """Interpret a view as lazy Polars, carrying input columns through (for a
+        router/structure to weight, fold or normalize). Stays lazy."""
+        return self._g.compute(frame, market=market, view=view)
+
+    def has_view(self, view: str) -> bool:
+        return self._g.has_view(view)
+
+    def view_schema(self, view: str) -> object | None:
+        return self._g.view_schema(view)
+
+    # Introspection passthroughs -- the same declaration explains itself.
+    def explain(self, *, view: str = _OUTPUT_VIEW, **kwargs: Any) -> str:
+        return self._g.explain(view=view, **kwargs)
+
+    def to_mermaid(self, *, view: str = _OUTPUT_VIEW, **kwargs: Any) -> str:
+        return self._g.to_mermaid(view=view, **kwargs)
+
+    def info(self, *, view: str = _OUTPUT_VIEW) -> GraphInfo:
+        return self._g.info(view=view)
+
+    def topological_order(self) -> list[str]:
+        return self._g.topological_order()
+
+    def required_inputs(self) -> set[str]:
+        """The contract/market-key columns a caller must supply."""
+        return self._g.required_inputs()
+
+    def dependencies_of(self, target: str | Term[Any]) -> set[str]:
+        return self._g.dependencies_of(target)

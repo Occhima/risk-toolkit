@@ -28,7 +28,7 @@ L = cols(SwapLegInput)
 
 swap_structure = (
     Structure("swap", input=SwapLegInput)
-    .components(swap_leg_router, view="pricing")
+    .components(swap_leg_router, view="output")
     .exposure(
         weighted_pv=pl.col("pv") * pl.col("leg_weight"),
     )

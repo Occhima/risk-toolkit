@@ -82,9 +82,7 @@ def modify_source(
     preserved; the original snapshot is untouched.
     """
     source = market.source(source_name)
-    new_expr = (
-        fn_or_expr if isinstance(fn_or_expr, pl.Expr) else fn_or_expr(pl.col(column))
-    )
+    new_expr = fn_or_expr if isinstance(fn_or_expr, pl.Expr) else fn_or_expr(pl.col(column))
     bumped = MarketSource(
         name=source.name,
         data=source.data.with_columns(new_expr.alias(column)),

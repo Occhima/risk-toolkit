@@ -8,25 +8,26 @@ from __future__ import annotations
 
 import polars as pl
 
-from schenberg.core.graph import FormulaGraph, uses
+from schenberg.core.graph import PricingGraph, Term, uses
 from schenberg.domain.enums import SwapLegKind
-from schenberg.domain.schemas import SwapLegInput
+from schenberg.domain.schemas import LegPricing, SwapLegInput
+from schenberg.market_data.requirements import MarketRequirements, requires
 from schenberg.pricing.discounting import year_fraction_term
 from schenberg.pricing.instruments.swap.generic import assemble_leg
-from schenberg.pricing.instruments.swap.legs.registry import CURVES, FIXINGS, PROJECTED, register
+from schenberg.pricing.instruments.swap.legs.registry import register
+from schenberg.pricing.market import CURVES, FIXINGS, PROJECTED
 
 
-def _build(name: str) -> FormulaGraph:
-    g = FormulaGraph(name, input=SwapLegInput)
-    t = g.input
-    m = g.market(
-        zero_rate=CURVES.value("zero_rate", indexer=t.id_indexador, tenor=t.payment_days),
-        base_index=FIXINGS.fixing(indexer=t.id_indexador, date=t.base_date),
-        projected_index=PROJECTED.value(
-            "projected_index", indexer=t.id_indexador, tenor=t.payment_days
-        ),
-    )
-    year_fraction = year_fraction_term(g, payment_days=t.payment_days)
+class IpcaLegRequirements(MarketRequirements[SwapLegInput]):
+    zero_rate: Term[float] = requires(CURVES.zero_rate())
+    base_index: Term[float] = requires(FIXINGS.base_index())
+    projected_index: Term[float] = requires(PROJECTED.projected_index())
+
+
+def _build(name: str) -> PricingGraph:
+    g = PricingGraph[SwapLegInput, IpcaLegRequirements, LegPricing](name)
+    c, m = g.contract, g.market
+    year_fraction = year_fraction_term(g, payment_days=c.payment_days)
 
     @g.formula(tags=("inflation",))
     def inflation_factor(
@@ -37,13 +38,13 @@ def _build(name: str) -> FormulaGraph:
 
     @g.formula(tags=("coupon",))
     def real_coupon_factor(
-        real_coupon: pl.Expr = uses(t.real_coupon), T: pl.Expr = uses(year_fraction)
+        real_coupon: pl.Expr = uses(c.real_coupon), T: pl.Expr = uses(year_fraction)
     ) -> pl.Expr:
         return 1.0 + real_coupon * T
 
     @g.formula(tags=("cashflow",))
     def cashflow_amount(
-        notional: pl.Expr = uses(t.notional),
+        notional: pl.Expr = uses(c.notional),
         inflation_factor: pl.Expr = uses(inflation_factor),
         real_coupon_factor: pl.Expr = uses(real_coupon_factor),
     ) -> pl.Expr:

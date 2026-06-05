@@ -111,13 +111,9 @@ class Structure:
         fold. Carries the input columns alongside the pricing view. Stays lazy."""
         if self.component_computation is None:
             raise ValueError(f"structure {self.name!r} has no component computation")
-        return self.component_computation.compute(
-            frame, market=market, view=self.component_view
-        )
+        return self.component_computation.compute(frame, market=market, view=self.component_view)
 
-    def stage(
-        self, frame: pl.LazyFrame, *, market: MarketSnapshot | None = None
-    ) -> pl.LazyFrame:
+    def stage(self, frame: pl.LazyFrame, *, market: MarketSnapshot | None = None) -> pl.LazyFrame:
         """Debug interpretation: component prices *plus* exposure/contribution
         columns, one row per component, before aggregation. Stays lazy."""
         priced = self.components_frame(frame, market=market)

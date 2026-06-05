@@ -42,5 +42,5 @@ def price_forward_instruments(
     forwards: LazyFrame[ForwardTrade],
     market: MarketSnapshot,
 ) -> LazyFrame[InstrumentPrice]:
-    priced = forward_router.compute(forwards, market=market, view="pricing")
+    priced = forward_router.compute(forwards, market=market, view="output")
     return aggregate_forward_prices(priced)

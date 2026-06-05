@@ -91,7 +91,7 @@ def test_risk_columns_have_sane_signs(book) -> None:
     # option_kind is recovered by joining back to the trades on option_id.
     risk = cast(
         pl.DataFrame,
-        option_risk_router.compute(options, market=market, view="risk").collect(),
+        option_risk_router.compute(options, market=market, view="output").collect(),
     )
     kinds = cast(pl.DataFrame, options.select("option_id", "option_kind").collect())
     df = risk.join(kinds, on="option_id")

@@ -19,10 +19,6 @@ from schenberg.domain.schemas.market_data import (
     FxRatesContract,
 )
 from schenberg.domain.schemas.position import Position, PricedPosition
-from schenberg.market_data.calendar.conventions import Calendar
-from schenberg.market_data.curves.di import DiCurve, DiCurveSpec
-from schenberg.market_data.forwards import EnergyForwardCurveSpec
-from schenberg.market_data.fx import FxRates
 from schenberg.market_data.path import MarketPath
 from schenberg.market_data.shocks import Shock, curve_parallel_shift
 from schenberg.market_data.snapshot import MarketSnapshot
@@ -33,6 +29,7 @@ from schenberg.position.functions import (
     with_prices,
 )
 from schenberg.position.pipelines import valuation_pipe
+from schenberg.pricing.market import DI
 
 
 def test_dataframe_model_ergonomic_constructors() -> None:
@@ -64,31 +61,12 @@ def test_column_ref_and_schema_cols() -> None:
         _ = F.quantity
 
 
-def test_di_curve_build_source_and_spec() -> None:
-    calendar = Calendar.business_252(set())
-    data = DiCurveContract.from_records(
-        [{"curve_name": "DI", "id_indexador": 1, "tenor_days": 21, "zero_rate": 0.1}]
-    )
-
-    curve = DiCurve.build(data=data, calendar=calendar)
-    source = curve.source()
-    req = curve.spec().zero_rate()
-
-    assert source.name == "di_curve"
-    assert source.schema is DiCurveContract
+def test_di_curve_read_keys_on_indexer_and_tenor() -> None:
+    req = DI.zero_rate().finalize("zero_rate")
     assert req.table == "di_curve"
     assert req.left_keys == ("id_indexador", "payment_days")
     assert req.right_keys == ("id_indexador", "tenor_days")
     assert req.outputs == {"zero_rate": "zero_rate"}
-
-
-def test_energy_forward_curve_spec_requirement() -> None:
-    req = EnergyForwardCurveSpec().forward_price()
-
-    assert req.table == "energy_forward_curve"
-    assert req.left_keys == ("submarket", "delivery_period")
-    assert req.right_keys == ("submarket", "delivery_period")
-    assert req.outputs == {"forward_price": "forward_price", "settle_days": "payment_days"}
 
 
 def test_market_snapshot_from_sources_attach_and_shock() -> None:
@@ -102,7 +80,7 @@ def test_market_snapshot_from_sources_attach_and_shock() -> None:
     snapshot = MarketSnapshot.from_sources(as_of=date(2026, 6, 3), sources=[source])
     trades = pl.DataFrame({"id_indexador": [1], "payment_days": [21]}).lazy()
 
-    attached = snapshot.attach(trades, DiCurveSpec().zero_rate(output="rate"))
+    attached = snapshot.attach(trades, DI.zero_rate().finalize("rate"))
     bumped = snapshot.apply(curve_parallel_shift(source="di_curve", shift=0.01))
 
     assert snapshot.source("di_curve") == source
@@ -224,7 +202,6 @@ def test_valuation_pipe_exposes_intermediate_outputs(energy_inputs, energy_marke
 
 
 def test_expected_user_workflow() -> None:
-    calendar = Calendar.business_252(holidays=set())
     di_curve_data = DiCurveContract.from_records(
         [{"curve_name": "DI", "id_indexador": 1, "tenor_days": 21, "zero_rate": 0.1}]
     )
@@ -240,14 +217,13 @@ def test_expected_user_workflow() -> None:
     )
     fx_data = FxRatesContract.from_records([{"currency": "BRL", "fx_rate": 1.0}])
 
-    di_curve = DiCurve.build(data=di_curve_data, calendar=calendar, name="di_curve")
-    energy_curve_source = MarketSource(
-        "energy_forward_curve", energy_curve_data, EnergyForwardCurveContract
-    )
-    fx_rates = FxRates.build(data=fx_data, name="fx_rates")
     market = MarketSnapshot.from_sources(
         as_of=date(2026, 6, 3),
-        sources=[di_curve.source(), energy_curve_source, fx_rates.source()],
+        sources=[
+            MarketSource("di_curve", di_curve_data, DiCurveContract),
+            MarketSource("energy_forward_curve", energy_curve_data, EnergyForwardCurveContract),
+            MarketSource("fx_rates", fx_data, FxRatesContract),
+        ],
     )
     forwards = EnergyForwardLeg.from_records(
         [

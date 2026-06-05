@@ -62,7 +62,7 @@ def test_swap_leg_router_routes_known_legs_and_unknown_to_fallback() -> None:
 
     out = cast(
         pl.DataFrame,
-        swap_leg_router.compute(legs, market=market, view="pricing").collect(),
+        swap_leg_router.compute(legs, market=market, view="output").collect(),
     )
 
     assert set(out["leg_kind"].to_list()) == {"FIXED", "CDI", "IPCA", "UNKNOWN"}

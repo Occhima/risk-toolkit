@@ -27,3 +27,6 @@ site/
 .DS_Store
 .idea/
 .vscode/
+
+# marimo generated session/layout caches
+__marimo__/

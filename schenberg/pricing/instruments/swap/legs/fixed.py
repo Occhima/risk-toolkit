@@ -4,25 +4,24 @@ from __future__ import annotations
 
 import polars as pl
 
-from schenberg.core.graph import FormulaGraph, uses
+from schenberg.core.graph import PricingGraph, uses
 from schenberg.domain.enums import SwapLegKind
-from schenberg.domain.schemas import SwapLegInput
+from schenberg.domain.schemas import LegPricing, SwapLegInput
 from schenberg.pricing.discounting import year_fraction_term
-from schenberg.pricing.instruments.swap.generic import assemble_leg, discount_curve
+from schenberg.pricing.instruments.swap.generic import DiscountRequirements, assemble_leg
 from schenberg.pricing.instruments.swap.legs.registry import register
 
 
-def _build() -> FormulaGraph:
-    g = FormulaGraph("fixed_swap_leg", input=SwapLegInput)
-    t = g.input
-    m = discount_curve(g, t)
-    year_fraction = year_fraction_term(g, payment_days=t.payment_days)
+def _build() -> PricingGraph:
+    g = PricingGraph[SwapLegInput, DiscountRequirements, LegPricing]("fixed_swap_leg")
+    c, m = g.contract, g.market
+    year_fraction = year_fraction_term(g, payment_days=c.payment_days)
 
     @g.formula(tags=("fixed", "cashflow"))
     def cashflow_amount(
-        notional: pl.Expr = uses(t.notional),
-        fixed_rate: pl.Expr = uses(t.fixed_rate),
-        accrual: pl.Expr = uses(t.accrual),
+        notional: pl.Expr = uses(c.notional),
+        fixed_rate: pl.Expr = uses(c.fixed_rate),
+        accrual: pl.Expr = uses(c.accrual),
     ) -> pl.Expr:
         return notional * fixed_rate * accrual
 

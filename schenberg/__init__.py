@@ -9,17 +9,17 @@ market a :class:`MarketPath` focuses; a :class:`Workflow` runs shape-changing
 stages; a :class:`DiagnosticReport` accumulates validation issues.
 """
 
+from schenberg.contracts import DataFrameModel, price_function
 from schenberg.core.diagnostics import Diagnostic, DiagnosticReport
 from schenberg.core.fold import Fold, count_, first_, lit_, sum_
-from schenberg.core.graph import FormulaGraph, Term, uses
-from schenberg.core.market import MarketDependency, MarketRead, MarketRequirement
+from schenberg.core.graph import FormulaGraph, PricingGraph, Term, uses
+from schenberg.core.market import MarketDependency, MarketRequirement
 from schenberg.core.pipeline import Workflow
 from schenberg.core.router import Router
 from schenberg.core.structure import Structure
-from schenberg.market_data.curves import CurveSpec
 from schenberg.market_data.path import MarketPath
+from schenberg.market_data.requirements import MarketRequirements, contract, requires
 from schenberg.market_data.shocks import Shock
-from schenberg.market_data.volatility import VolSurfaces, VolSurfaceSpec
 from schenberg.pricing.api import (
     price_energy_forward,
     price_forwards,
@@ -31,25 +31,27 @@ from schenberg.pricing.api import (
 
 __all__ = [
     # the pricing language
-    "CurveSpec",
+    "DataFrameModel",
     "Diagnostic",
     "DiagnosticReport",
     "Fold",
     "FormulaGraph",
     "MarketDependency",
     "MarketPath",
-    "MarketRead",
     "MarketRequirement",
+    "MarketRequirements",
+    "PricingGraph",
     "Router",
     "Shock",
     "Structure",
     "Term",
-    "VolSurfaceSpec",
-    "VolSurfaces",
     "Workflow",
+    "contract",
     "count_",
     "first_",
     "lit_",
+    "price_function",
+    "requires",
     "sum_",
     "uses",
     # public pricing facades

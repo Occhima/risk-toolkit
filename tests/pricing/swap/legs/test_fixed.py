@@ -41,7 +41,7 @@ def test_fixed_leg_pricing() -> None:
 
     out = cast(
         pl.DataFrame,
-        fixed_swap_leg_graph.compute(leg, market=market, view="pricing").collect(),
+        fixed_swap_leg_graph.compute(leg, market=market, view="output").collect(),
     )
 
     assert out.select("cashflow_amount").item() == pytest.approx(80_000.0)

@@ -13,11 +13,10 @@ from typing import cast
 import polars as pl
 import pytest
 from schenberg.core.graph import FormulaGraph, Term, TermKind, uses
-from schenberg.core.market import MarketRead
 from schenberg.domain.base import DataFrameModel
-from schenberg.market_data.curves import CurveSpec
 from schenberg.market_data.snapshot import MarketSnapshot
 from schenberg.market_data.sources import MarketSource
+from schenberg.pricing.market import CURVES
 
 
 class Trade(DataFrameModel):
@@ -152,10 +151,7 @@ def test_later_formula_depends_on_earlier_formula_term() -> None:
 
 def test_market_creates_terms_named_by_keyword() -> None:
     g = FormulaGraph("g", input=Trade)
-    t = g.input
-    m = g.market(
-        rate=CurveSpec("curves").value("zero_rate", indexer=t.id_indexador, tenor=t.payment_days)
-    )
+    m = g.market(rate=CURVES.zero_rate().finalize("zero_rate"))
     assert isinstance(m.rate, Term)
     assert m.rate.kind is TermKind.MARKET
     assert m.rate.name == "rate"
@@ -164,9 +160,7 @@ def test_market_creates_terms_named_by_keyword() -> None:
 def test_market_term_compiles_to_column_after_attachment() -> None:
     g = FormulaGraph("g", input=Trade)
     t = g.input
-    m = g.market(
-        rate=CurveSpec("curves").value("zero_rate", indexer=t.id_indexador, tenor=t.payment_days)
-    )
+    m = g.market(rate=CURVES.zero_rate().finalize("zero_rate"))
 
     @g.formula()
     def price(r: pl.Expr = uses(m.rate), s: pl.Expr = uses(t.spot)) -> pl.Expr:
@@ -178,11 +172,9 @@ def test_market_term_compiles_to_column_after_attachment() -> None:
     assert "vol" not in out.columns
 
 
-def test_market_accepts_a_market_read_from_a_spec() -> None:
-    read = CurveSpec("curves").value("zero_rate")
-    assert isinstance(read, MarketRead)
+def test_market_names_a_requirement_output_from_its_keyword() -> None:
     g = FormulaGraph("g", input=Trade)
-    m = g.market(rate=read)
+    m = g.market(rate=CURVES.zero_rate().finalize("zero_rate"))
     assert m.rate.name == "rate"
     assert g._market[0].outputs == {"zero_rate": "rate"}
 
@@ -219,9 +211,7 @@ def test_returns_rejects_columns_outside_schema() -> None:
 def test_input_and_market_terms_can_be_returned_directly() -> None:
     g = FormulaGraph("g", input=Trade)
     t = g.input
-    m = g.market(
-        rate=CurveSpec("curves").value("zero_rate", indexer=t.id_indexador, tenor=t.payment_days)
-    )
+    m = g.market(rate=CURVES.zero_rate().finalize("zero_rate"))
     g.returns("echo", trade_id=t.trade_id, rate=m.rate, spot=t.spot)
     out = cast(pl.DataFrame, g.compute(_frame(), market=_market(), view="echo").collect())
     assert out["rate"].item() == pytest.approx(0.1)
@@ -234,9 +224,7 @@ def test_input_and_market_terms_can_be_returned_directly() -> None:
 def _priced_graph() -> FormulaGraph:
     g = FormulaGraph("demo", input=Trade)
     t = g.input
-    m = g.market(
-        rate=CurveSpec("curves").value("zero_rate", indexer=t.id_indexador, tenor=t.payment_days)
-    )
+    m = g.market(rate=CURVES.zero_rate().finalize("zero_rate"))
 
     @g.formula(symbol="T", latex=r"\frac{d}{252}")
     def year_fraction(d: pl.Expr = uses(t.payment_days)) -> pl.Expr:

@@ -11,9 +11,9 @@ from schenberg.core.columns import cols
 from schenberg.core.graph import FormulaGraph, uses
 from schenberg.core.router import Router
 from schenberg.domain.base import DataFrameModel
-from schenberg.market_data.curves import CurveSpec
 from schenberg.market_data.snapshot import MarketSnapshot
 from schenberg.market_data.sources import MarketSource
+from schenberg.pricing.market import CURVES
 
 
 class Trade(DataFrameModel):
@@ -186,11 +186,7 @@ def test_router_market_attachment_flows_through_branches() -> None:
     def discounted(name: str) -> FormulaGraph:
         g = FormulaGraph(name, input=MarketTrade)
         t = g.input
-        m = g.market(
-            rate=CurveSpec("curves").value(
-                "zero_rate", indexer=t.id_indexador, tenor=t.payment_days
-            )
-        )
+        m = g.market(rate=CURVES.zero_rate().finalize("zero_rate"))
 
         @g.formula()
         def price(r: pl.Expr = uses(m.rate)) -> pl.Expr:

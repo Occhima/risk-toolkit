@@ -144,7 +144,7 @@ def test_explain_describes_components_exposure_and_fold() -> None:
 
     assert "Structure swap" in text
     assert "router: swap_leg_router" in text
-    assert "view: pricing" in text
+    assert "view: output" in text
     assert "weighted_pv" in text
     assert "group by: swap_id" in text
     assert "ativo_pv = sum(weighted_pv where leg_role == 'ativo')" in text

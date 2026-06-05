@@ -6,13 +6,15 @@ from typing import cast
 
 import polars as pl
 import pytest
+from schenberg.domain.schemas.forward import ForwardPricing
 from schenberg.market_data.snapshot import MarketSnapshot
 from schenberg.market_data.sources import MarketSource
 from schenberg.pricing.instruments.forward.generic import base_forward_graph
 
 
 def test_base_forward_graph_defines_generic_payoff() -> None:
-    assert {"forward_price", "strike"}.issubset(base_forward_graph.dependencies_of("future_value"))
+    assert base_forward_graph.has_view("output")
+    assert base_forward_graph.view_schema("output") is ForwardPricing
 
 
 def test_base_forward_graph_prices_generic_forward_spread() -> None:
@@ -45,7 +47,7 @@ def test_base_forward_graph_prices_generic_forward_spread() -> None:
 
     out = cast(
         pl.DataFrame,
-        base_forward_graph.compute(forwards, market=market, view="pricing").collect(),
+        base_forward_graph.compute(forwards, market=market, view="output").collect(),
     )
 
     expected_fv = 100.0

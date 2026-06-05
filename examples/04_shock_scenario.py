@@ -70,14 +70,24 @@ legs = cast(
     pl.DataFrame(
         [
             {
-                "swap_id": "SWP-1", "leg_id": "ativo", "leg_kind": "CDI",
-                "leg_role": "ativo", "leg_weight": 1.0, "id_indexador": 1,
-                "real_coupon": None, **_common,
+                "swap_id": "SWP-1",
+                "leg_id": "ativo",
+                "leg_kind": "CDI",
+                "leg_role": "ativo",
+                "leg_weight": 1.0,
+                "id_indexador": 1,
+                "real_coupon": None,
+                **_common,
             },
             {
-                "swap_id": "SWP-1", "leg_id": "passivo", "leg_kind": "IPCA",
-                "leg_role": "passivo", "leg_weight": -1.0, "id_indexador": 2,
-                "real_coupon": 0.02, **_common,
+                "swap_id": "SWP-1",
+                "leg_id": "passivo",
+                "leg_kind": "IPCA",
+                "leg_role": "passivo",
+                "leg_weight": -1.0,
+                "id_indexador": 2,
+                "real_coupon": 0.02,
+                **_common,
             },
         ]
     ).lazy(),

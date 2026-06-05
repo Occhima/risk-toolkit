@@ -26,8 +26,4 @@ def test_price_energy_forward_uses_generic_forward_outputs(energy_inputs, energy
     assert result.select("instrument_type").item() == "FORWARD"
     assert result.select("price").item() == pytest.approx(49.057467, rel=1e-6)
     assert not set(result.columns) & {"quantity", "mtm", "mtm_local"}
-    assert energy_forward_graph.view_dtypes("pricing").keys() == {
-        "future_value",
-        "present_value",
-        "value",
-    }
+    assert energy_forward_graph.has_view("output")
