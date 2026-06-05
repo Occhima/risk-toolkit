@@ -1,0 +1,152 @@
+{
+  "version": "1",
+  "metadata": {
+    "marimo_version": "0.23.9",
+    "script_metadata_hash": null
+  },
+  "cells": [
+    {
+      "id": "Hbol",
+      "code_hash": "1d0db38904205bec4d6f6f6a1f6cec3e",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/plain": ""
+          }
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "MJUe",
+      "code_hash": "37e89bff8772252669fa1f4904ed625e",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/markdown": "<span class=\"markdown prose dark:prose-invert contents\"><h1 id=\"energy-forward-a-contract-oriented-pricing-graph\">\u26a1 Energy forward \u2014 a contract-oriented pricing graph</h1>\n<span class=\"paragraph\">A Schenberg instrument is three typed schemas and some pure formulas:</span>\n<ul>\n<li>a <strong>Contract</strong> \u2014 what each trade row carries,</li>\n<li><strong>MarketRequirements</strong> \u2014 <em>what market data it needs and how to find each row</em>\n  (every join is declared here, and nowhere else),</li>\n<li>an <strong>Output</strong> contract \u2014 what the priced book looks like.</li>\n</ul>\n<span class=\"paragraph\">Formulas read <code>g.contract</code> and <code>g.market</code> terms and <strong>never join</strong>.\n<code>g.bind(trades, market)</code> resolves the market; <code>g.plan(bound)</code> returns one\nlazy Polars plan.</span></span>"
+          }
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "vblA",
+      "code_hash": "8f1a02926973b390ae252af82392ee93",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/plain": ""
+          }
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "bkHC",
+      "code_hash": "5b7ce70fb8bb2a9fb2bc37a00d12d1d5",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/markdown": "<span class=\"markdown prose dark:prose-invert contents\"><h2 id=\"market-requirements\">Market requirements</h2>\n<span class=\"paragraph\">Each field names a market column the instrument exposes and the keyed read that fills it. <code>.by(...)</code> is omitted here \u2014 the reads use their typed default keys.</span>\n<ul>\n<li><strong>forward_price</strong> \u27f5 <code>energy_forward_curve(submarket, delivery_period)</code></li>\n<li><strong>zero_rate</strong> \u27f5 <code>di_curve(id_indexador, payment_days)</code></li>\n<li><strong>fx_rate</strong> \u27f5 <code>fx_rates(currency)</code></li>\n</ul></span>"
+          }
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "lEQa",
+      "code_hash": "55134f12c62b001882f2ddef92762d85",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/markdown": "<span class=\"markdown prose dark:prose-invert contents\"><h2 id=\"the-pricing-graph\">The pricing graph</h2>\n<div class=\"language-splus codehilite\"><pre><span></span><code><span class=\"n\">FormulaGraph</span><span class=\"w\"> </span><span class=\"n\">energy_forward</span>\n\n<span class=\"n\">View</span><span class=\"o\">:</span>\n\n<span class=\"w\">    </span><span class=\"o\">-</span><span class=\"w\"> </span><span class=\"n\">output</span><span class=\"w\"> </span><span class=\"o\">-&gt;</span><span class=\"w\"> </span><span class=\"n\">ForwardPricing</span>\n\n<span class=\"n\">Inputs</span><span class=\"o\">:</span><span class=\"w\"> </span><span class=\"n\">currency</span><span class=\"p\">,</span><span class=\"w\"> </span><span class=\"n\">delivery_period</span><span class=\"p\">,</span><span class=\"w\"> </span><span class=\"n\">id_indexador</span><span class=\"p\">,</span><span class=\"w\"> </span><span class=\"n\">payment_days</span><span class=\"p\">,</span><span class=\"w\"> </span><span class=\"n\">strike</span><span class=\"p\">,</span><span class=\"w\"> </span><span class=\"n\">submarket</span>\n\n<span class=\"n\">Market</span><span class=\"w\"> </span><span class=\"n\">reads</span><span class=\"o\">:</span>\n\n<span class=\"w\">    </span><span class=\"o\">-</span><span class=\"w\"> </span><span class=\"n\">forward_price</span><span class=\"w\"> </span><span class=\"o\">&lt;-</span><span class=\"w\"> </span><span class=\"nf\">energy_forward_curve</span><span class=\"p\">(</span><span class=\"n\">submarket</span><span class=\"p\">,</span><span class=\"w\"> </span><span class=\"n\">delivery_period</span><span class=\"p\">)</span>\n\n<span class=\"w\">    </span><span class=\"o\">-</span><span class=\"w\"> </span><span class=\"n\">zero_rate</span><span class=\"w\"> </span><span class=\"o\">&lt;-</span><span class=\"w\"> </span><span class=\"nf\">di_curve</span><span class=\"p\">(</span><span class=\"n\">id_indexador</span><span class=\"p\">,</span><span class=\"w\"> </span><span class=\"n\">payment_days</span><span class=\"p\">)</span>\n\n<span class=\"w\">    </span><span class=\"o\">-</span><span class=\"w\"> </span><span class=\"n\">fx_rate</span><span class=\"w\"> </span><span class=\"o\">&lt;-</span><span class=\"w\"> </span><span class=\"nf\">fx_rates</span><span class=\"p\">(</span><span class=\"n\">currency</span><span class=\"p\">)</span>\n\n<span class=\"n\">Formulas</span><span class=\"o\">:</span>\n\n<span class=\"w\">    </span><span class=\"o\">-</span><span class=\"w\"> </span><span class=\"bp\">T</span><span class=\"w\"> </span><span class=\"o\">=</span><span class=\"w\"> </span>\\<span class=\"n\">frac</span><span class=\"p\">{</span><span class=\"n\">d</span><span class=\"p\">}{</span><span class=\"m\">252</span><span class=\"p\">}</span><span class=\"w\">  </span><span class=\"c1\"># 252-day year fraction (time to maturity).</span>\n\n<span class=\"w\">    </span><span class=\"o\">-</span><span class=\"w\"> </span><span class=\"n\">DF</span><span class=\"w\"> </span><span class=\"o\">=</span><span class=\"w\"> </span><span class=\"n\">e</span><span class=\"o\">^</span><span class=\"p\">{</span><span class=\"o\">-</span><span class=\"n\">rT</span><span class=\"p\">}</span><span class=\"w\">  </span><span class=\"c1\"># Continuously compounded discount factor off the zero curve.</span>\n\n<span class=\"w\">    </span><span class=\"o\">-</span><span class=\"w\"> </span><span class=\"n\">future_value</span><span class=\"w\"> </span><span class=\"o\">=</span><span class=\"w\"> </span>\\<span class=\"n\">operatorname</span><span class=\"p\">{</span><span class=\"n\">future_value</span><span class=\"p\">}(</span><span class=\"n\">forward_price</span><span class=\"p\">,</span><span class=\"w\"> </span><span class=\"n\">strike</span><span class=\"p\">)</span><span class=\"w\">  </span><span class=\"c1\"># Generic forward unit payoff.</span>\n\n<span class=\"w\">    </span><span class=\"o\">-</span><span class=\"w\"> </span><span class=\"n\">PV</span><span class=\"w\"> </span><span class=\"o\">=</span><span class=\"w\"> </span><span class=\"n\">V</span><span class=\"w\"> </span>\\<span class=\"n\">cdot</span><span class=\"w\"> </span><span class=\"n\">DF</span><span class=\"w\">  </span><span class=\"c1\"># Discount a future cashflow into local present value.</span>\n\n<span class=\"w\">    </span><span class=\"o\">-</span><span class=\"w\"> </span><span class=\"n\">value</span><span class=\"w\"> </span><span class=\"o\">=</span><span class=\"w\"> </span>\\<span class=\"n\">operatorname</span><span class=\"p\">{</span><span class=\"n\">value</span><span class=\"p\">}(</span><span class=\"n\">present_value</span><span class=\"p\">,</span><span class=\"w\"> </span><span class=\"n\">fx_rate</span><span class=\"p\">)</span><span class=\"w\">  </span><span class=\"c1\"># Translate local PV to reporting currency.</span>\n\n<span class=\"n\">Returns</span><span class=\"o\">:</span>\n\n<span class=\"w\">    </span><span class=\"o\">-</span><span class=\"w\"> </span><span class=\"n\">future_value</span><span class=\"w\"> </span><span class=\"o\">&lt;-</span><span class=\"w\"> </span><span class=\"n\">future_value</span>\n\n<span class=\"w\">    </span><span class=\"o\">-</span><span class=\"w\"> </span><span class=\"n\">present_value</span><span class=\"w\"> </span><span class=\"o\">&lt;-</span><span class=\"w\"> </span><span class=\"n\">present_value</span>\n\n<span class=\"w\">    </span><span class=\"o\">-</span><span class=\"w\"> </span><span class=\"n\">value</span><span class=\"w\"> </span><span class=\"o\">&lt;-</span><span class=\"w\"> </span><span class=\"n\">value</span>\n</code></pre></div></span>"
+          }
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "PKri",
+      "code_hash": "d6dfb4f55b3c4e7ea17b6db29071aca3",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/html": "<div style='display: flex;flex: 1;flex-direction: column;justify-content: flex-start;align-items: center;flex-wrap: nowrap;gap: 0rem'><div><span class=\"markdown prose dark:prose-invert contents\"><h2 id=\"dependency-graph\">Dependency graph</h2></span></div></div>"
+          }
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "Xref",
+      "code_hash": "408408731f31576d40309544f68eb106",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/html": "<marimo-mermaid data-diagram='&quot;flowchart LR&#92;n    forward_price --&#92;u003e future_value&#92;n    strike --&#92;u003e future_value&#92;n    payment_days --&#92;u003e year_fraction&#92;n    zero_rate --&#92;u003e discount_factor&#92;n    year_fraction --&#92;u003e discount_factor&#92;n    future_value --&#92;u003e present_value&#92;n    discount_factor --&#92;u003e present_value&#92;n    present_value --&#92;u003e value&#92;n    fx_rate --&#92;u003e value&quot;'></marimo-mermaid>"
+          }
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "SFPL",
+      "code_hash": "21e16fa234c2e04abec9407a199d6bf7",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/html": "<marimo-ui-element object-id='SFPL-0' random-id='0c84165a-b5c3-b42e-c710-9609801a2197'><marimo-slider data-initial-value='100.0' data-label='&quot;&#92;u003cspan class=&#92;&quot;markdown prose dark:prose-invert contents&#92;&quot;&#92;u003e&#92;u003cspan class=&#92;&quot;paragraph&#92;&quot;&#92;u003eStrike (R&#36;/MWh)&#92;u003c/span&#92;u003e&#92;u003c/span&#92;u003e&quot;' data-start='80.0' data-stop='160.0' data-step='5.0' data-steps='[]' data-debounce='false' data-disabled='false' data-orientation='&quot;horizontal&quot;' data-show-value='false' data-include-input='false' data-full-width='false'></marimo-slider></marimo-ui-element>"
+          }
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "BYtC",
+      "code_hash": "81404b6bda7b71d0b7a1b2e3ca1df2e8",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/plain": ""
+          }
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "RGSE",
+      "code_hash": "2b5d494583b24057dd638a33e6fb52c4",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/plain": ""
+          }
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "Kclp",
+      "code_hash": "80cc851d360726c5225cbbfaf77c7f18",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/html": "<div style='display: flex;flex: 1;flex-direction: column;justify-content: flex-start;align-items: normal;flex-wrap: nowrap;gap: 0.5rem'><span class=\"markdown prose dark:prose-invert contents\"><h2 id=\"priced-book-r-4906\">Priced book \u2014 <strong>R$ 49.06</strong></h2></span><marimo-ui-element object-id='Kclp-0' random-id='f02d3fd4-36c2-d946-e46d-0d9d3cd77ba2'><marimo-table data-initial-value='[]' data-label='null' data-data='&quot;[{&#92;&quot;instrument_type&#92;&quot;:&#92;&quot;FORWARD&#92;&quot;,&#92;&quot;instrument_id&#92;&quot;:&#92;&quot;ENG-1&#92;&quot;,&#92;&quot;price&#92;&quot;:49.057466987787606}]&quot;' data-total-rows='1' data-total-columns='3' data-max-columns='50' data-banner-text='&quot;&quot;' data-pagination='false' data-page-size='10' data-field-types='[[&quot;instrument_type&quot;,[&quot;string&quot;,&quot;str&quot;]],[&quot;instrument_id&quot;,[&quot;string&quot;,&quot;str&quot;]],[&quot;price&quot;,[&quot;number&quot;,&quot;f64&quot;]]]' data-show-filters='true' data-show-download='true' data-show-column-summaries='false' data-show-data-types='true' data-show-page-size-selector='false' data-show-column-explorer='true' data-show-chart-builder='true' data-row-headers='[]' data-hidden-columns='[]' data-has-stable-row-id='false' data-lazy='false' data-preload='false'></marimo-table></marimo-ui-element></div>"
+          }
+        }
+      ],
+      "console": []
+    }
+  ]
+}

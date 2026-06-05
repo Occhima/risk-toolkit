@@ -67,6 +67,12 @@ select = ["E", "F", "I", "UP", "B", "SIM", "PL"]
 # defaults — that default *is* the graph dependency, so the call is by design.
 ignore = ["PLR0913", "B008"]
 
+[tool.ruff.lint.per-file-ignores]
+# marimo notebooks are cell-DAGs of identically-named ``def _`` functions whose
+# last expression is the cell's display value; that idiom is the notebook format,
+# not a smell.
+"examples/notebooks/*.py" = ["F811", "B018", "PLR1711", "PLR0913", "PLR2004", "PLC0415", "I001"]
+
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
