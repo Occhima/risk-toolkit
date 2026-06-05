@@ -146,18 +146,19 @@ class _Namespace:
 
 
 class FormulaGraph:
-    """An open, typed, applicative pricing graph.
+    """The open, typed, applicative pricing engine.
 
-    Declare a graph over an input schema, name the market data it reads, and wire
-    its formulas with explicit term dependencies::
+    This is the substrate that owns graph topology and Polars compilation;
+    instruments are authored against the typed :class:`PricingGraph` facade, and
+    market data is declared with the
+    :class:`~schenberg.market_data.requirements.MarketRequirements` DSL. The engine
+    itself accepts already-built market dependencies::
 
         g = FormulaGraph("generalized_call", input=OptionTrade)
         t = g.input
         m = g.market(
-            rate=CurveSpec("curves").value("zero_rate", indexer=t.id_indexador,
-                                           tenor=t.payment_days),
-            vol=VolSurfaceSpec("vol_surface").implied_vol(indexer=t.id_indexador,
-                                           tenor=t.payment_days, strike=t.strike),
+            rate=CURVES.zero_rate().finalize("rate"),
+            vol=VOL.implied_vol().finalize("vol"),
         )
 
         @g.formula(symbol="T", latex=r"\\frac{d}{252}")
@@ -216,9 +217,8 @@ class FormulaGraph:
         for use in :func:`uses` defaults::
 
             m = g.market(
-                rate=CurveSpec("curves").value("zero_rate", indexer=t.id_indexador,
-                                               tenor=t.payment_days),
-                vol=VolSurfaceSpec("vol_surface").implied_vol(...),
+                rate=CURVES.zero_rate().finalize("rate"),
+                vol=VOL.implied_vol().finalize("vol"),
             )
 
         A pre-built dependency that writes several columns at once (a multi-output

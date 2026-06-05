@@ -41,11 +41,10 @@ class MarketDependency(Protocol):
 class MarketRead:
     """A market read that knows *what* to read but not yet *where* to write it.
 
-    Specs hand back a ``MarketRead`` when no ``output`` column is named. The
-    output is supplied later — ``g.market(rate=CurveSpec("curves").value(...))``
-    names it from the keyword — by calling :meth:`as_output`, which builds the
-    concrete :class:`MarketDependency`. This is the Reader half of the market
-    layer: a delayed dependency awaiting its environment binding.
+    The output is supplied later — ``g.market`` names it from the keyword — by
+    calling :meth:`as_output`, which builds the concrete
+    :class:`MarketDependency`. This is the Reader half of the market layer: a
+    delayed dependency awaiting its environment binding.
     """
 
     build: Callable[[str], MarketDependency]

@@ -8,31 +8,36 @@ example.
 
 ## Add a new payoff: write a graph
 
-An instrument is "another graph". Declare it over an input schema, name the market
-data as terms with `g.market`, wire formulas with `uses`, and publish a view:
+An instrument is a typed `PricingGraph[Contract, Requirements, Output]`. Declare a
+`MarketRequirements` schema for the market data (one `requires(...)` field per
+market column), wire formulas with `uses` over `g.contract` / `g.market`, and
+publish the output:
 
 ```python
 import polars as pl
-from schenberg.core.graph import FormulaGraph, uses
-from schenberg.market_data.curves import CurveSpec
+from schenberg.core.graph import PricingGraph, Term, uses
+from schenberg.market_data.requirements import Key, Keyed, MarketRequirements, requires
 
-g = FormulaGraph("my_instrument", input=MyTrade)
-t = g.input
-m = g.market(forward_price=CurveSpec("a_curve").value("price",
-                                                      indexer=t.id_indexador,
-                                                      tenor=t.payment_days))
+class MyRequirements(MarketRequirements[MyTrade]):
+    # a built-in registry read, or a hand-rolled Keyed read for a custom table:
+    forward_price: Term[float] = requires(
+        Keyed("a_curve", "price", (Key("tenor", quote_col="tenor_days", default="payment_days"),))
+    )
 
-@g.formula()
-def payoff(fwd: pl.Expr = uses(m.forward_price), k: pl.Expr = uses(t.strike)) -> pl.Expr:
+g = PricingGraph[MyTrade, MyRequirements, MyPricing]("my_instrument")
+c, m = g.contract, g.market
+
+@g.formula(name="value")
+def payoff(fwd: Term[float] = uses(m.forward_price), k: Term[float] = uses(c.strike)) -> pl.Expr:
     return fwd - k
 
-g.returns("pricing", value=payoff)
+g.returns()  # MyPricing fields are satisfied by like-named terms
 ```
 
 The full worked version is
 [`examples/custom_instrument/graph.py`](../examples/custom_instrument/graph.py).
-Reuse shared math from `schenberg.math.expressions`, and `extend()` /
-`compose_with()` existing graphs to inherit their formulas rather than copy them.
+Reuse shared math from `schenberg.math.expressions` and the shared `Term`
+builders in `schenberg.pricing.discounting` rather than copying formulas.
 
 ## Add a new variant of the same payoff: route it
 
@@ -116,21 +121,20 @@ router or graph change.
 
    ```python
    from schenberg.market_data.date_rules import start_of_tenor_year
-   from schenberg.market_data.fixings import FixingsSpec
-
-   FIXINGS = FixingsSpec("fixings")
 
    prepared = legs.with_columns(
        start_of_tenor_year(tenor_col="tenor_date", output_col="pca_fixing_date")
    )
    ```
 
-2. Declare it as a market term, naming the output by keyword:
+2. Point a requirements field at the derived key with `.by(...)`:
 
    ```python
-   m = graph.market(
-       pca_factor=FIXINGS.value(indexer="id_indexador", date="pca_fixing_date"),
-   )
+   from schenberg.market_data.requirements import MarketRequirements, contract, requires
+   from schenberg.pricing.market import FIXINGS
+
+   class MyRequirements(MarketRequirements[MyTrade]):
+       pca_factor: Term[float] = requires(FIXINGS.value().by(date=contract.pca_fixing_date))
    ```
 
 The graph formula reads `m.pca_factor` like any other market term; it never knows

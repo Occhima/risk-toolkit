@@ -8,25 +8,13 @@
 
 ::: schenberg.market_data.sources.MarketSource
 
-## JoinSpec
+## Market requirements (the requirements DSL)
 
-::: schenberg.market_data.specs.JoinSpec
+::: schenberg.market_data.requirements
 
-## Curves
+## Market source registry
 
-::: schenberg.market_data.curves.CurveSpec
-
-## Forwards
-
-::: schenberg.market_data.forwards
-
-## FX
-
-::: schenberg.market_data.fx
-
-## Fixings
-
-::: schenberg.market_data.fixings
+::: schenberg.pricing.market
 
 ## ANBIMA calendar
 

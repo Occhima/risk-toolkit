@@ -43,70 +43,67 @@ what the body sees.
 
 ```python
 import polars as pl
-from schenberg.core.graph import FormulaGraph, uses
+from schenberg.core.graph import PricingGraph, Term, uses
 from schenberg.domain.schemas.option import OptionTrade, OptionPrice
-from schenberg.market_data.curves import CurveSpec
-from schenberg.market_data.volatility import VolSurfaceSpec
+from schenberg.market_data.requirements import MarketRequirements, requires
+from schenberg.pricing.market import CURVES, VOL
 
-g = FormulaGraph("generalized_call", input=OptionTrade)
-t = g.input
+class CallRequirements(MarketRequirements[OptionTrade]):
+    rate: Term[float] = requires(CURVES.zero_rate())
+    vol: Term[float] = requires(VOL.implied_vol())
 
-m = g.market(
-    rate=CurveSpec("curves").value("zero_rate", indexer=t.id_indexador, tenor=t.payment_days),
-    vol=VolSurfaceSpec("vol_surface").implied_vol(
-        indexer=t.id_indexador, tenor=t.payment_days, strike=t.strike
-    ),
-)
+g = PricingGraph[OptionTrade, CallRequirements, OptionPrice]("generalized_call")
+c, m = g.contract, g.market
 
 @g.formula(symbol="T", latex=r"\frac{d}{252}")
-def year_fraction(d: pl.Expr = uses(t.payment_days)) -> pl.Expr:
+def year_fraction(d: Term[int] = uses(c.payment_days)) -> pl.Expr:
     return d / 252.0
 
-@g.formula(symbol="C")
+@g.formula(name="price", symbol="C")
 def call_price(
-    S: pl.Expr = uses(t.spot),
-    r: pl.Expr = uses(m.rate),
-    sigma: pl.Expr = uses(m.vol),
-    T: pl.Expr = uses(year_fraction),
+    S: Term[float] = uses(c.spot),
+    r: Term[float] = uses(m.rate),
+    sigma: Term[float] = uses(m.vol),
+    T: Term[float] = uses(year_fraction),
 ) -> pl.Expr:
     ...  # a Polars expression
 
-g.returns("price", OptionPrice, option_id=t.option_id, instrument_type=t.instrument_type,
-          price=call_price)
+g.returns()  # the OptionPrice fields are satisfied by like-named terms
 ```
 
-`returns(view, schema, **mapping)` declares a typed result *view*: each schema
-field must be satisfied by a term (pass it explicitly, or let an identically
-named term fill it); extra columns are rejected. `g.compute(frame, market=...,
-view="price")` then compiles the view into one lazy `with_columns`. A bare `Term`
-default (`d=t.payment_days`) is accepted as shorthand, but `uses(...)` is the
-canonical style because it keeps type hints clean.
+`returns(schema=None)` publishes the primary `output` view (defaulting to the
+`Output` type parameter); `view(name, schema)` adds secondary typed views. Every
+field is satisfied *by name* — the contract, market or formula term of the same
+name — so there is no column mapping. `g.bind(trades, market=...)` resolves the
+environment and `g.plan(bound)` returns one lazy plan; as a `Computation`,
+`g.compute(frame, market=..., view="output")` slots into a `Router`/`Structure`.
 
-## 3. Market data is the Reader environment — and it is lookup-oriented
+## 3. Market data is declared once, in the requirements schema
 
-Market reads are declared *inside the graph* as terms with `g.market(...)`; the
-`MarketSnapshot` supplies *where they come from* at compute time — the Reader
-environment, injected late.
+A `PricingGraph`'s formulas never join. *What market data the instrument needs and
+how to find each row* lives in one place — a `MarketRequirements` schema — and the
+`MarketSnapshot` supplies *where it comes from* at compute time (the Reader
+environment, injected late).
 
 ```python
-m = g.market(
-    rate=CurveSpec("curves").value("zero_rate", indexer=t.id_indexador, tenor=t.payment_days),
-)
+class CallRequirements(MarketRequirements[OptionTrade]):
+    rate: Term[float] = requires(CURVES.zero_rate())
+    vol: Term[float] = requires(VOL.implied_vol())
 ```
 
-A market read is **lookup-oriented**: it declares *which value to read for each
-row*. A keyed join is only one implementation of that lookup; interpolation
-(`InterpolatedSpec`, vol surfaces), fixings, and scenario reads are other
-implementations of the same `MarketRead`/`MarketDependency` idea. Don't think of
-market data as "join-oriented" — joins are one strategy among several.
+Each field name *is* the market column the instrument exposes; `requires(...)`
+wraps a fluent read from the source registry (`schenberg.pricing.market`). A read
+is **lookup-oriented**: it declares *which value to read for each row*. A keyed
+join (`CURVES.zero_rate()`) is one implementation; interpolation
+(`VOL.implied_vol()`, vol surfaces) is another — both compile to the same
+`MarketDependency`. `.by(key=contract.column)` overrides a join key; it is
+optional, because each read carries typed default key columns, so you write it
+only when a contract names its columns unconventionally.
 
-`CurveSpec(...).value(...)` with no `output` returns a delayed **`MarketRead`** —
-it knows *what* to read but not yet *where* to write it. `g.market(rate=...)`
-names the output column from the keyword. At compute time the engine attaches the
-market **before** compiling formulas, so **lookup keys must already be columns** on
-the input frame. Anything that derives a lookup key (normalizing wide rows into
-legs, computing a reference date) is a *pre-step* — a plain transform or a
-`Workflow` stage — not a formula.
+At compute time the engine attaches the market **before** compiling formulas, so
+**lookup keys must already be columns** on the input frame. Anything that derives a
+lookup key (normalizing wide rows into legs, computing a reference date) is a
+*pre-step* — a plain transform or a `Workflow` stage — not a formula.
 
 ## 4. Open-graph composition
 
