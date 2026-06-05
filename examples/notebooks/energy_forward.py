@@ -77,8 +77,7 @@ def _(EnergyForwardRequirements, mo):
         "## Market requirements\n\n"
         "Each field names a market column the instrument exposes and the keyed read "
         "that fills it. `.by(...)` is omitted here — the reads use their typed default "
-        "keys.\n\n"
-        + "\n".join(f"- **{field}** ⟵ `{src}`" for field, src in requirements.items())
+        "keys.\n\n" + "\n".join(f"- **{field}** ⟵ `{src}`" for field, src in requirements.items())
     )
     return
 
@@ -103,9 +102,7 @@ def _(energy_forward_graph, mo):
 
 @app.cell
 def _(mo):
-    strike = mo.ui.slider(
-        start=80.0, stop=160.0, step=5.0, value=100.0, label="Strike (R$/MWh)"
-    )
+    strike = mo.ui.slider(start=80.0, stop=160.0, step=5.0, value=100.0, label="Strike (R$/MWh)")
     strike
     return (strike,)
 

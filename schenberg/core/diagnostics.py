@@ -58,9 +58,7 @@ class DiagnosticReport:
         self, level: Level, code: str, message: str, location: str | None = None
     ) -> DiagnosticReport:
         """Return a new report with one more diagnostic appended."""
-        return DiagnosticReport(
-            self.diagnostics + (Diagnostic(level, code, message, location),)
-        )
+        return DiagnosticReport(self.diagnostics + (Diagnostic(level, code, message, location),))
 
     def extend(self, *diagnostics: Diagnostic) -> DiagnosticReport:
         """Return a new report with several diagnostics appended."""

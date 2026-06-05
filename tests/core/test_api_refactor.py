@@ -7,12 +7,11 @@ from typing import cast
 import polars as pl
 import pytest
 from schenberg.core.columns import ColumnLike, ColumnRef, col_name, cols
-from schenberg.core.market import MarketRead, MarketRequirement
 from schenberg.core.pipeline import Workflow
 from schenberg.core.router import Router
 from schenberg.domain.schemas.option import OptionPrice
-from schenberg.market_data.curves import CurveSpec
-from schenberg.market_data.volatility import VolSurfaceSpec
+from schenberg.market_data.requirements import contract
+from schenberg.pricing.market import CURVES
 
 
 def test_column_like_helpers() -> None:
@@ -22,24 +21,12 @@ def test_column_like_helpers() -> None:
     assert col_name(accepts) == "z"
 
 
-def test_curve_spec_returns_market_read_when_output_omitted() -> None:
-    read = CurveSpec("curves").value("zero_rate", indexer="id_indexador", tenor="payment_days")
-    # Omitting output yields a delayed MarketRead; g.market names the column.
-    assert isinstance(read, MarketRead)
-    assert read.as_output("rate").outputs == {"zero_rate": "rate"}
-    # With an explicit output it is the concrete requirement.
-    fixed = CurveSpec("curves").value("zero_rate", output="rate")
-    assert isinstance(fixed, MarketRequirement)
-    assert fixed.outputs == {"zero_rate": "rate"}
-
-
-def test_vol_surface_spec_returns_market_read_when_output_omitted() -> None:
-    OPT = cols(OptionPrice)  # any schema; just exercising ColumnLike
-    read = VolSurfaceSpec("vol_surface").implied_vol(
-        indexer=ColumnRef("id_indexador"), tenor="payment_days", strike=OPT.price
-    )
-    assert isinstance(read, MarketRead)
-    assert read.as_output("vol").outputs == {"implied_vol": "vol"}
+def test_registry_read_finalizes_to_a_keyed_requirement() -> None:
+    req = CURVES.zero_rate().by(tenor=contract.settle_days).finalize("rate")
+    assert req.table == "curves"
+    assert req.left_keys == ("id_indexador", "settle_days")
+    assert req.right_keys == ("id_indexador", "tenor_days")
+    assert req.outputs == {"zero_rate": "rate"}
 
 
 def test_router_on_case_and_when() -> None:

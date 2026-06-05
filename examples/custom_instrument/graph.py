@@ -1,11 +1,17 @@
 """The inflation-linked energy forward graph -- a fully custom instrument.
 
-This is "another graph" built on the same engine the built-in instruments use,
-in the canonical Term DSL: inputs come from :data:`InflationEnergyLeg` via
-``g.input``, the market reads are declared as terms with ``g.market``, and every
-formula names its dependencies with ``uses``. The payoff is the energy spread,
-scaled to nominal terms by an inflation factor, then discounted and converted to
-the reporting currency::
+This is "another instrument" built on the same typed engine the built-ins use.
+It shows the whole shape of the contract-oriented DSL on a graph that reads
+*custom* market tables:
+
+* a ``Contract`` schema (:class:`InflationEnergyLeg`),
+* a :class:`MarketRequirements` schema whose fields are ``requires(...)`` over
+  hand-rolled :class:`~schenberg.market_data.requirements.Keyed` reads -- you are
+  not limited to the built-in market registry,
+* pure formulas that only ``uses`` contract and market terms, and an ``Output``.
+
+The payoff is the energy spread, scaled to nominal terms by an inflation factor,
+then discounted and converted to the reporting currency::
 
     real_spread      = forward_price - strike
     inflation_factor = projected_index / base_index
@@ -20,10 +26,12 @@ stays index-agnostic: one graph prices both IPCA and CPI contracts.
 
 from __future__ import annotations
 
+from datetime import date
+
 import polars as pl
-from schenberg.core.graph import FormulaGraph, uses
+from schenberg.core.graph import PricingGraph, Term, uses
 from schenberg.domain.base import DataFrameModel
-from schenberg.market_data.specs import JoinSpec
+from schenberg.market_data.requirements import Key, Keyed, MarketRequirements, requires
 from schenberg.math.expressions import (
     continuous_discount_factor_expr,
     year_fraction_252_expr,
@@ -39,67 +47,106 @@ class InflationEnergyLeg(DataFrameModel):
     forward_price: float
     strike: float
     currency: str
-    reference_date: object  # the convention-derived inflation-curve join key
+    reference_date: date  # the convention-derived inflation-curve join key
 
 
-inflation_energy_graph = FormulaGraph("inflation_energy_forward", input=InflationEnergyLeg)
-t = inflation_energy_graph.input
+class InflationEnergyPricing(DataFrameModel):
+    future_value: float
+    present_value: float
+    value: float
 
-# Market reads as graph terms. Each is a keyed left join; the inflation curve
-# joins on (id_indexador, reference_date -> ref_date), so the convention-specific
-# date is what selects the right point.
-m = inflation_energy_graph.market(
-    projected_index=JoinSpec("inflation_curve").read(
-        "projected_index", ("id_indexador", "id_indexador"), ("reference_date", "ref_date")
-    ),
-    base_index=JoinSpec("inflation_fixings").read("base_index", ("id_indexador", "id_indexador")),
-    zero_rate=JoinSpec("di_curve").read("zero_rate", ("payment_days", "tenor_days")),
-    fx_rate=JoinSpec("fx_rates").read("fx_rate", ("currency", "currency")),
-)
+
+def _curve(table: str, value_col: str, *keys: Key) -> Keyed:
+    return Keyed(table=table, value_col=value_col, keys=keys)
+
+
+class InflationEnergyRequirements(MarketRequirements[InflationEnergyLeg]):
+    """Custom market reads -- the inflation curve joins on the convention-derived
+    ``reference_date``, so the index-specific date selects the right point."""
+
+    projected_index: Term[float] = requires(
+        _curve(
+            "inflation_curve",
+            "projected_index",
+            Key("indexer", quote_col="id_indexador", default="id_indexador"),
+            Key("ref", quote_col="ref_date", default="reference_date"),
+        )
+    )
+    base_index: Term[float] = requires(
+        _curve(
+            "inflation_fixings",
+            "base_index",
+            Key("indexer", quote_col="id_indexador", default="id_indexador"),
+        )
+    )
+    zero_rate: Term[float] = requires(
+        _curve(
+            "di_curve",
+            "zero_rate",
+            Key("tenor", quote_col="tenor_days", default="payment_days"),
+        )
+    )
+    fx_rate: Term[float] = requires(
+        _curve(
+            "fx_rates",
+            "fx_rate",
+            Key("currency", quote_col="currency", default="currency"),
+        )
+    )
+
+
+inflation_energy_graph = PricingGraph[
+    InflationEnergyLeg,
+    InflationEnergyRequirements,
+    InflationEnergyPricing,
+]("inflation_energy_forward")
+c = inflation_energy_graph.contract
+m = inflation_energy_graph.market
 
 
 @inflation_energy_graph.formula(tags=("time",), description="252-day year fraction.")
-def year_fraction(d: pl.Expr = uses(t.payment_days)) -> pl.Expr:
+def year_fraction(d: Term[int] = uses(c.payment_days)) -> pl.Expr:
     return year_fraction_252_expr(d)
 
 
 @inflation_energy_graph.formula(tags=("discounting",))
-def discount_factor(r: pl.Expr = uses(m.zero_rate), T: pl.Expr = uses(year_fraction)) -> pl.Expr:
+def discount_factor(
+    r: Term[float] = uses(m.zero_rate), T: Term[float] = uses(year_fraction)
+) -> pl.Expr:
     return continuous_discount_factor_expr(r, T)
 
 
 @inflation_energy_graph.formula(tags=("inflation",), description="projected / base index.")
 def inflation_factor(
-    projected: pl.Expr = uses(m.projected_index), base: pl.Expr = uses(m.base_index)
+    projected: Term[float] = uses(m.projected_index), base: Term[float] = uses(m.base_index)
 ) -> pl.Expr:
     return projected / base
 
 
 @inflation_energy_graph.formula(tags=("cashflow",), description="Energy spread in real terms.")
-def real_spread(fwd: pl.Expr = uses(t.forward_price), k: pl.Expr = uses(t.strike)) -> pl.Expr:
+def real_spread(
+    fwd: Term[float] = uses(c.forward_price), k: Term[float] = uses(c.strike)
+) -> pl.Expr:
     return fwd - k
 
 
 @inflation_energy_graph.formula(tags=("cashflow",), description="Spread scaled to nominal terms.")
 def future_value(
-    spread: pl.Expr = uses(real_spread), factor: pl.Expr = uses(inflation_factor)
+    spread: Term[float] = uses(real_spread), factor: Term[float] = uses(inflation_factor)
 ) -> pl.Expr:
     return spread * factor
 
 
 @inflation_energy_graph.formula(tags=("pricing",))
-def present_value(fv: pl.Expr = uses(future_value), df: pl.Expr = uses(discount_factor)) -> pl.Expr:
+def present_value(
+    fv: Term[float] = uses(future_value), df: Term[float] = uses(discount_factor)
+) -> pl.Expr:
     return fv * df
 
 
 @inflation_energy_graph.formula(tags=("pricing", "fx"))
-def value(pv: pl.Expr = uses(present_value), fx: pl.Expr = uses(m.fx_rate)) -> pl.Expr:
+def value(pv: Term[float] = uses(present_value), fx: Term[float] = uses(m.fx_rate)) -> pl.Expr:
     return pv * fx
 
 
-inflation_energy_graph.returns(
-    "pricing",
-    future_value=future_value,
-    present_value=present_value,
-    value=value,
-)
+inflation_energy_graph.returns()

@@ -34,7 +34,7 @@ backend, not a new join engine.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from typing import Any, ClassVar, get_args
+from typing import Any, ClassVar, cast, get_args
 
 from schenberg.core.columns import ColumnBinding, ColumnSet
 from schenberg.core.graph import Term, TermKind
@@ -244,7 +244,7 @@ class MarketRequirements[C]:
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
-        contract_type = _contract_arg(cls)
+        contract_type = cast("Any", _contract_arg(cls))
         schema_columns: set[str] | None = None
         if contract_type is not None and hasattr(contract_type, "to_schema"):
             schema_columns = set(contract_type.to_schema().columns.keys())
