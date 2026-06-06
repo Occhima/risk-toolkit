@@ -214,9 +214,7 @@ class FormulaGraph:
             frame = frame.with_columns(compile_polars(self._terms[name]).alias(name))
         return frame
 
-    def _resolve_view(
-        self, outputs: Mapping[str, str] | None, view: str | None
-    ) -> dict[str, str]:
+    def _resolve_view(self, outputs: Mapping[str, str] | None, view: str | None) -> dict[str, str]:
         if outputs is not None:
             return dict(outputs)
         if view is not None:
@@ -231,9 +229,7 @@ class FormulaGraph:
         present = set(lf.collect_schema().names())
         missing = sorted(needed - present)
         if missing:
-            raise ValueError(
-                f"graph {self.name!r} is missing required input column(s): {missing}"
-            )
+            raise ValueError(f"graph {self.name!r} is missing required input column(s): {missing}")
 
     # ---- dependency analysis ---------------------------------------------
 

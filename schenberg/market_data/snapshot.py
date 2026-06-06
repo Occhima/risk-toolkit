@@ -28,12 +28,12 @@ class MarketSnapshot:
     def at(cls, as_of: date) -> _SnapshotBuilder:
         """Start a fluent snapshot build: name each source, then ``.build()``::
 
-            market = (
-                MarketSnapshot.at(date(2026, 6, 6))
-                .source("curves", curves_lf, unique_by=("id_indexador", "tenor_days"))
-                .source("fixings", fixings_lf, unique_by=("id_indexador", "fixing_date"))
-                .build()
-            )
+        market = (
+            MarketSnapshot.at(date(2026, 6, 6))
+            .source("curves", curves_lf, unique_by=("id_indexador", "tenor_days"))
+            .source("fixings", fixings_lf, unique_by=("id_indexador", "fixing_date"))
+            .build()
+        )
         """
         return _SnapshotBuilder(as_of=as_of, _sources=[])
 
@@ -89,9 +89,7 @@ class _SnapshotBuilder:
     ) -> _SnapshotBuilder:
         """Register one market source by name and its quote-key uniqueness."""
         lf = data.lazy() if isinstance(data, pl.DataFrame) else data
-        self._sources.append(
-            MarketSource(name=name, data=lf, schema=schema, unique_by=unique_by)
-        )
+        self._sources.append(MarketSource(name=name, data=lf, schema=schema, unique_by=unique_by))
         return self
 
     def add(self, schema: type, data: pl.LazyFrame | pl.DataFrame) -> _SnapshotBuilder:

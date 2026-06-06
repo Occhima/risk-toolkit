@@ -2,34 +2,28 @@
 
 Run with:  uv run python docs/examples/01_price_a_forward.py
 
-This is the simplest entry point. A forward pays ``forward_price - strike`` at
-tenor, discounted back at the risk-free rate in its own currency. The contract
-is typed (``ForwardContractPricing``); the market is a ``MarketSnapshot`` built
-from plain DataFrames. Everything stays lazy until
-the final ``.collect()``.
+A forward pays ``forward_rate - strike`` at tenor, discounted back to today at
+the risk-free rate in the instrument's own currency. The contract schema is
+``ForwardContractPricing``; the market is a ``MarketSnapshot`` built from plain
+DataFrames. Everything stays lazy until the final ``.collect()``.
 
-Two contract-rule derived dates are filled automatically from the contract terms
-before validation runs — you never call ``.resolve()`` yourself:
-
-- ``index_fixing_date``: the date the index is read. Defaults to tenor;
-  ``"CPI"`` shifts it +5 calendar days.
-- ``currency_fixing_date``: the date associated with the currency convention.
-  Defaults to tenor; ``"EUR"`` uses the previous business day.
+``bind(trades, market, ForwardContractPricing)`` glues the market data to the
+trade frame: it discovers the ``With[ForwardRate]`` and ``With[RiskFreeRate]``
+mixins declared on the schema and left-joins the curve source keyed by
+``(id_indexador, tenor_days)`` → trade ``(indexer, payment_days)``.
 """
 
 from __future__ import annotations
 
 from datetime import date
-from typing import cast
 
 import polars as pl
-from pandera.typing.polars import LazyFrame
 from schenberg.market_data.snapshot import MarketSnapshot
 from schenberg.market_data.sources import MarketSource
-from schenberg.pricing.instruments.derivatives.forwards import ForwardContractPricing, price_forward
+from schenberg.pricing.api import price_forward
 
 # ---------------------------------------------------------------------------
-# Market: one curve keyed by (indexer, payment_days)
+# Market: one curve keyed by (id_indexador, tenor_days)
 # ---------------------------------------------------------------------------
 market = MarketSnapshot.from_sources(
     as_of=date(2026, 6, 5),
@@ -38,8 +32,8 @@ market = MarketSnapshot.from_sources(
             "curves",
             pl.DataFrame(
                 {
-                    # forward_rate is the projected forward price (not a yield).
-                    # risk_free_rate is the continuous discount rate.
+                    # forward_rate: the projected forward price (not a yield).
+                    # risk_free_rate: the continuous discount rate.
                     "id_indexador": ["DI", "DI"],
                     "tenor_days": [252, 504],
                     "forward_rate": [112.0, 115.0],
@@ -54,21 +48,15 @@ market = MarketSnapshot.from_sources(
 # ---------------------------------------------------------------------------
 # Trades: two forwards, same indexer, different tenors
 # ---------------------------------------------------------------------------
-# index_fixing_date and currency_fixing_date are omitted — the contract rules
-# fill them from tenor automatically (same_day default for both "DI" / "BRL").
-trades = cast(
-    LazyFrame[ForwardContractPricing],
-    pl.DataFrame(
-        {
-            "instrument_id": ["FWD-1", "FWD-2"],
-            "tenor": [date(2027, 6, 5), date(2028, 6, 5)],
-            "indexer": ["DI", "DI"],
-            "currency": ["BRL", "BRL"],
-            "strike": [100.0, 100.0],  # strike in the same units as forward_rate
-            "payment_days": [252, 504],
-        }
-    ).lazy(),
-)
+trades = pl.DataFrame(
+    {
+        "instrument_id": ["FWD-1", "FWD-2"],
+        "indexer": ["DI", "DI"],
+        "currency": ["BRL", "BRL"],
+        "strike": [100.0, 100.0],
+        "payment_days": [252, 504],
+    }
+).lazy()
 
 # ---------------------------------------------------------------------------
 # Price: lazy until .collect()
@@ -76,8 +64,4 @@ trades = cast(
 result = price_forward(trades, market)
 print("Schema:", result.collect_schema())
 print()
-print(
-    cast(pl.DataFrame, result.collect()).select(
-        "instrument_id", "future_value", "present_value", "value"
-    )
-)
+print(result.collect().select("instrument_id", "future_value", "present_value", "value"))
