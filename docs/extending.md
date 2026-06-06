@@ -213,6 +213,21 @@ are exactly such declarations; `view.explain()` / `.to_mermaid()` / `.stage(...)
 describe and debug them, and book/portfolio roll-up is a *later* layer — a `Fold`
 (`schenberg.position.book_value_rollup`), never part of the view.
 
+The built-in pricers emit `InstrumentValue` directly, so they slot straight into
+`position_value` — no manual `rename`:
+
+```python
+from schenberg.pricing.api import forward_instrument_value
+from schenberg.position import position_value
+
+values = forward_instrument_value(trades, market)        # LazyFrame[InstrumentValue]
+valued = position_value(positions, value=values, book=book, fx=fx)
+```
+
+The emitted `value` is the **pure, own-currency** present value and `currency`
+is the instrument's own denomination, so the reporting-currency conversion stays
+a position-layer concern (`ReportingFx` → `reported_mtm`) and never happens twice.
+
 ## Contract rules and derived contractual coordinates
 
 Contractual coordinates (`index_fixing_date`, `currency_fixing_date`,

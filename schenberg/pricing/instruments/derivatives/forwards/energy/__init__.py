@@ -1,5 +1,6 @@
 from schenberg.pricing.instruments.derivatives.forwards.energy.api import (
     energy_forward_formula,
+    energy_forward_instrument_value,
     price_energy_forward,
 )
 from schenberg.pricing.instruments.derivatives.forwards.energy.contracts import (
@@ -13,5 +14,6 @@ __all__ = [
     "EnergyForwardMarket",
     "EnergyForwardPricing",
     "energy_forward_formula",
+    "energy_forward_instrument_value",
     "price_energy_forward",
 ]
