@@ -6,18 +6,17 @@ blocks, not a framework. Every column is referenced by a *typed* schema column
 (``cols(Position).side``, ``cols(InstrumentValue).value``) — never a bare string —
 so a typo fails at construction, against the schema, not at ``collect``. Each
 helper returns a :class:`~schenberg.position.view.Measure` that registers exactly
-one term on a view, resolving its inputs through ``view.col(...)`` so it works
-regardless of how the sources were named.
+one term on a view as an :class:`~schenberg.core.expr.Expr`, resolving its inputs
+through ``view.col(...)`` so it works regardless of how the sources were named.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable
-
-import polars as pl
+from functools import reduce
 
 from schenberg.core.columns import ColumnLike, col_name, cols
-from schenberg.core.graph import uses
+from schenberg.core.expr import Expr, abs_
 from schenberg.domain.schemas.position import (
     InstrumentValue,
     Position,
@@ -41,12 +40,8 @@ def exposure(
 ) -> Measure:
     """Economic exposure: ``side * quantity``. Direction enters here."""
 
-    def register(view: PositionView):
-        @view.measure(name=name, symbol="E")
-        def _(s=uses(view.col(side)), q=uses(view.col(quantity))) -> pl.Expr:
-            return s * q
-
-        return _
+    def register(view: PositionView) -> Expr:
+        return view.let(name, view.col(side) * view.col(quantity), symbol="E")
 
     return Measure(register)
 
@@ -59,12 +54,8 @@ def position_notional(
 ) -> Measure:
     """Gross notional held: ``|quantity| * unit_notional``."""
 
-    def register(view: PositionView):
-        @view.measure(name=name, symbol="N")
-        def _(q=uses(view.col(quantity)), un=uses(view.col(unit_notional))) -> pl.Expr:
-            return q.abs() * un
-
-        return _
+    def register(view: PositionView) -> Expr:
+        return view.let(name, abs_(view.col(quantity)) * view.col(unit_notional), symbol="N")
 
     return Measure(register)
 
@@ -81,12 +72,8 @@ def scaled(
     """
     measure_name: ColumnLike = name if name is not None else f"position_{col_name(column)}"
 
-    def register(view: PositionView):
-        @view.measure(name=measure_name)
-        def _(factor=uses(view.col(by)), x=uses(view.col(column))) -> pl.Expr:
-            return factor * x
-
-        return _
+    def register(view: PositionView) -> Expr:
+        return view.let(measure_name, view.col(by) * view.col(column))
 
     return Measure(register)
 
@@ -99,12 +86,8 @@ def mtm(
 ) -> Measure:
     """Mark-to-market of the position: ``exposure * instrument_value``."""
 
-    def register(view: PositionView):
-        @view.measure(name=name, symbol="MTM")
-        def _(e=uses(view.col(exposure)), v=uses(view.col(value))) -> pl.Expr:
-            return e * v
-
-        return _
+    def register(view: PositionView) -> Expr:
+        return view.let(name, view.col(exposure) * view.col(value), symbol="MTM")
 
     return Measure(register)
 
@@ -117,12 +100,8 @@ def reported_mtm(
 ) -> Measure:
     """MTM converted into the book's reporting currency: ``mtm / book_fx``."""
 
-    def register(view: PositionView):
-        @view.measure(name=name, symbol=r"\widehat{MTM}")
-        def _(m=uses(view.col(mtm)), fx=uses(view.col(rate))) -> pl.Expr:
-            return m / fx
-
-        return _
+    def register(view: PositionView) -> Expr:
+        return view.let(name, view.col(mtm) / view.col(rate), symbol=r"\widehat{MTM}")
 
     return Measure(register)
 
@@ -145,16 +124,8 @@ def pnl_component(
     """One reported PnL-explain component, lifted from the instrument decomposition:
     ``exposure * <value> / book_fx`` -> ``<name>``."""
 
-    def register(view: PositionView):
-        @view.measure(name=name)
-        def _(
-            e=uses(view.col(exposure)),
-            c=uses(view.col(value)),
-            fx=uses(view.col(rate)),
-        ) -> pl.Expr:
-            return e * c / fx
-
-        return _
+    def register(view: PositionView) -> Expr:
+        return view.let(name, view.col(exposure) * view.col(value) / view.col(rate))
 
     return Measure(register)
 
@@ -164,15 +135,9 @@ def total(components: Iterable[ColumnLike], *, name: ColumnLike) -> Measure:
     construction, so ``total == Σ components``."""
     comps = list(components)
 
-    def register(view: PositionView):
+    def register(view: PositionView) -> Expr:
         terms = [view.col(component) for component in comps]
-
-        def reduce_sum(*exprs: pl.Expr) -> pl.Expr:
-            acc = exprs[0]
-            for expr in exprs[1:]:
-                acc = acc + expr
-            return acc
-
-        return view.derive(name, terms, reduce_sum, symbol="Σ")
+        summed = reduce(lambda a, b: a + b, terms)
+        return view.let(name, summed, symbol="Σ")
 
     return Measure(register)

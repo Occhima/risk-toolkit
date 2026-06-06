@@ -8,7 +8,6 @@ from typing import Any
 
 import polars as pl
 from schenberg.core.graph import FormulaGraph
-from schenberg.market_data.snapshot import MarketSnapshot
 
 from .backends import PricingBackend, collect_custom, collect_local, collect_ray
 
@@ -88,17 +87,12 @@ def compute_graph_pricing(
     lf: pl.LazyFrame,
     *,
     context: PricingExecutionContext | None = None,
-    market: MarketSnapshot | None = None,
     outputs: Mapping[str, str] | None = None,
     view: str | None = None,
 ) -> pl.DataFrame:
-    """Compute and collect graph pricing outputs with a selected backend."""
-    pricing_lf = graph.compute(
-        lf,
-        market=market,
-        outputs=outputs,
-        view=view,
-    )
+    """Plan and collect graph pricing outputs with a selected backend. The frame
+    must already be market-bound — the graph is a pure function of its inputs."""
+    pricing_lf = graph.plan(lf, outputs=outputs, view=view)
     return collect_pricing(pricing_lf, context=context)
 
 
@@ -107,15 +101,9 @@ def stage_graph_pricing(
     lf: pl.LazyFrame,
     *,
     context: PricingExecutionContext | None = None,
-    market: MarketSnapshot | None = None,
     view: str | None = None,
     targets: list[str] | None = None,
 ) -> pl.DataFrame:
     """Materialize staged graph intermediates with a selected backend."""
-    staged_lf = graph.stage(
-        lf,
-        market=market,
-        view=view,
-        targets=targets,
-    )
+    staged_lf = graph.stage(lf, view=view, targets=targets)
     return collect_pricing(staged_lf, context=context)

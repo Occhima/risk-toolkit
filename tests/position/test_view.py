@@ -11,8 +11,8 @@ import schenberg.position.measures as measures_mod
 import schenberg.position.view as view_mod
 import schenberg.position.views as views_mod
 from schenberg.core.columns import cols
+from schenberg.core.expr import abs_
 from schenberg.core.fold import Fold
-from schenberg.core.graph import uses
 from schenberg.domain.schemas.position import (
     BookContract,
     InstrumentPnlExplain,
@@ -363,7 +363,7 @@ def test_compute_output_conforms_to_the_contract_schema() -> None:
 
 def test_validate_flag_can_be_turned_off() -> None:
     # validate=False skips the boundary contract but stays lazy and equal.
-    raw = position_value.compute(
+    raw = position_value.plan(
         _positions(), value=_values(), book=_book(), fx=_fx(), validate=False
     )
     assert isinstance(raw, pl.LazyFrame)
@@ -376,7 +376,7 @@ def test_validate_flag_can_be_turned_off() -> None:
 
 def test_missing_source_frame_is_a_clear_error() -> None:
     with pytest.raises(ValueError, match="missing source 'fx'"):
-        position_value.compute(_positions(), value=_values(), book=_book())
+        position_value.plan(_positions(), value=_values(), book=_book())
 
 
 def test_non_key_column_collision_is_rejected_at_declaration() -> None:
@@ -398,7 +398,7 @@ def test_non_key_column_collision_is_rejected_at_declaration() -> None:
 # ---- reusable-measure parity with the decorator form -------------------------
 
 
-def test_reusable_measures_match_handwritten_decorator() -> None:
+def test_handwritten_let_measures_match_reusable() -> None:
     hand = (
         PositionView("hand", output=PositionValue)
         .spine(Position)
@@ -408,22 +408,10 @@ def test_reusable_measures_match_handwritten_decorator() -> None:
     )
     P, V, FX = hand.position, hand.value, hand.fx
 
-    @hand.measure(symbol="E")
-    def exposure(side=uses(P.side), qty=uses(P.quantity)) -> pl.Expr:
-        return side * qty
-
-    @hand.measure
-    def position_notional(qty=uses(P.quantity), un=uses(P.unit_notional)) -> pl.Expr:
-        return qty.abs() * un
-
-    @hand.measure
-    def mtm(e=uses(exposure), val=uses(V.value)) -> pl.Expr:
-        return e * val
-
-    @hand.measure
-    def reported_mtm(m=uses(mtm), fx=uses(FX.book_fx)) -> pl.Expr:
-        return m / fx
-
+    e = hand.let("exposure", P.side * P.quantity, symbol="E")
+    hand.let("position_notional", abs_(P.quantity) * P.unit_notional)
+    m = hand.let("mtm", e * V.value, symbol="MTM")
+    hand.let("reported_mtm", m / FX.book_fx)
     hand.returns()
 
     a = _collect(hand(_positions(), value=_values(), book=_book(), fx=_fx()))

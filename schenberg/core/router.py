@@ -14,27 +14,21 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Protocol, TypeVar, cast, runtime_checkable
+from typing import Any, Protocol, TypeVar, cast, runtime_checkable
 
 import polars as pl
 
 from schenberg.core.columns import ColumnRef, RoutePredicate
 
-if TYPE_CHECKING:
-    from schenberg.market_data.snapshot import MarketSnapshot
-
 
 @runtime_checkable
 class Computation(Protocol):
-    """The interface a router branch must satisfy — shared with FormulaGraph."""
+    """The interface a router branch must satisfy — shared with :class:`Formula`.
 
-    def compute(
-        self,
-        frame: pl.LazyFrame,
-        *,
-        market: MarketSnapshot | None = None,
-        view: str = "result",
-    ) -> pl.LazyFrame: ...
+    A branch is a *pure* computation: market data is bound before it ever runs, so
+    ``plan`` takes only the frame and a view."""
+
+    def plan(self, frame: pl.LazyFrame, *, view: str = "result") -> pl.LazyFrame: ...
 
     def has_view(self, view: str) -> bool: ...
 
@@ -177,27 +171,22 @@ class Router:
     def view_schema(self, view: str) -> object | None:
         return self.contract_schema if self.contract_view == view else None
 
-    def compute(
-        self,
-        frame: pl.LazyFrame,
-        *,
-        market: MarketSnapshot | None = None,
-        view: str = "result",
-    ) -> pl.LazyFrame:
-        """Route rows to their branch and concat the results under the contract."""
+    def plan(self, frame: pl.LazyFrame, *, view: str = "result") -> pl.LazyFrame:
+        """Route rows to their branch and concat the results under the contract.
+
+        A router is itself a pure :class:`Computation`: it takes only the frame
+        and a view, since market data was bound upstream."""
         parts: list[pl.LazyFrame] = []
         matched = pl.lit(False)
 
         for branch in self.branches:
             condition = self._and(branch.predicates)
             selector = condition & ~matched if self.mode == FIRST_MATCH else condition
-            parts.append(
-                branch.computation.compute(frame.filter(selector), market=market, view=view)
-            )
+            parts.append(branch.computation.plan(frame.filter(selector), view=view))
             matched = matched | condition
 
         if self.fallback is not None:
-            parts.append(self.fallback.compute(frame.filter(~matched), market=market, view=view))
+            parts.append(self.fallback.plan(frame.filter(~matched), view=view))
 
         if not parts:
             raise ValueError("router has no registered cases and no fallback")
