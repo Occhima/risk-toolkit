@@ -91,18 +91,23 @@ aggregates with a `Fold` (not an ad-hoc `group_by(...).agg(...)`) to the level y
 report at — mirroring the built-in pricers:
 
 ```python
-from schenberg.core.fold import Fold, sum_, lit_
+from schenberg.core.fold import Fold, sum_, lit_, first_
 
 my_fold = (
     Fold("my_instrument", input_schema=MyPricing)
     .by("instrument_id")
-    .returns(InstrumentPrice, instrument_type=lit_("MY_TYPE"), price=sum_("value"))
+    .returns(
+        InstrumentValue,
+        instrument_type=lit_("MY_TYPE"),
+        value=sum_("value"),
+        currency=first_("currency"),
+    )
 )
 
 def price_my_instrument(legs, market):
     prepared = add_lookup_keys(legs)
     priced = g.compute(prepared, market=market, view="pricing")
-    return my_fold.compute(priced)
+    return my_fold.compute(priced)   # -> LazyFrame[InstrumentValue]
 ```
 
 For a structured instrument (component pricing + exposure + fold), assemble a
@@ -150,20 +155,19 @@ normally, then combine with `price_structures`:
 from schenberg.pricing.structured import price_structures
 from schenberg.position import position_value
 
-atomic_prices = pl.concat([forward_prices, swap_prices], how="diagonal_relaxed")
-structure_prices = price_structures(structure_legs, atomic_prices)
-all_prices = pl.concat([atomic_prices, structure_prices], how="diagonal_relaxed")
+atomic_values = pl.concat([forward_values, swap_values], how="diagonal_relaxed")
+structure_values = price_structures(structure_legs, atomic_values)
+all_values = pl.concat([atomic_values, structure_values], how="diagonal_relaxed")
 
-# lift the pure prices to InstrumentValue, then value the positions
-values = all_prices.rename({"price": "value"}).with_columns(currency=pl.lit("BRL"))
-valued = position_value(positions, value=values, book=book, fx=fx)
+valued = position_value(positions, value=all_values, book=book, fx=fx)
 ```
 
 `structure_legs` is a `StructureLeg` frame with columns
 `structure_id, leg_id, component_instrument_type, component_instrument_id,
-quantity, side`.  The output of `price_structures` has the same shape as
-any other `InstrumentPrice` frame (`instrument_type, instrument_id, price`)
-with `instrument_type = "STRUCTURE"`.
+quantity, side`.  `price_structures` consumes and emits `InstrumentValue`
+(`instrument_type, instrument_id, value, currency`) with
+`instrument_type = "STRUCTURE"`, so it concatenates with the atomic values and
+feeds `position_value` directly.
 
 ## Value a position — the position layer
 
@@ -227,6 +231,40 @@ valued = position_value(positions, value=values, book=book, fx=fx)
 The emitted `value` is the **pure, own-currency** present value and `currency`
 is the instrument's own denomination, so the reporting-currency conversion stays
 a position-layer concern (`ReportingFx` → `reported_mtm`) and never happens twice.
+
+## Risk factors are the same view, a different quantity
+
+A `PositionView` lifts *any* pure per-instrument quantity onto a position — not
+just a single `value`. Risk factors (the closed-form Greeks) are a vector of pure
+sensitivities (`InstrumentRisk`), lifted by exposure exactly as `value` becomes
+`mtm`. The one primitive is `scaled(column, by="exposure")` — `mtm` *is*
+`scaled("value")`; a position Greek *is* `scaled("delta")`:
+
+```python
+from schenberg.position import measures as M
+from schenberg.position.view import PositionView
+from schenberg.domain.schemas.position import Position, InstrumentRisk, PositionRisk
+
+GREEKS = ("delta", "gamma", "vega", "theta", "rho")
+
+position_risk = (
+    PositionView("position_risk", output=PositionRisk)
+    .spine(Position)
+    .source("risk", InstrumentRisk, on=("instrument_type", "instrument_id"))
+    .add(M.exposure(), *[M.risk_factor(g) for g in GREEKS])  # position_<g> = exposure * <g>
+    .returns()
+)
+
+risk = position_risk(positions, risk=instrument_greeks)   # lazy LazyFrame[PositionRisk]
+```
+
+This is the built-in `schenberg.position.position_risk`. The pure `InstrumentRisk`
+comes from the risk layer (`schenberg.risk.greeks`, the same five Greeks as
+`OptionGreeks`), tagged with `instrument_type` / `instrument_id` / `currency`. A
+short option position (`side = -1`) flips the sign of every position Greek, because
+`side` lives on the `Position`, never in the sensitivity. If you report a
+currency-valued Greek in book currency, add `book` / `fx` sources and a
+`reported_*` measure — the same `/ book_fx` step as `reported_mtm`.
 
 ## Contract rules and derived contractual coordinates
 

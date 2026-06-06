@@ -7,7 +7,6 @@ import pytest
 from pandera.typing.polars import LazyFrame
 from schenberg.domain.schemas.position import (
     BookContract,
-    InstrumentPrice,
     InstrumentValue,
     Position,
     ReportingFx,
@@ -15,18 +14,6 @@ from schenberg.domain.schemas.position import (
 from schenberg.domain.schemas.structure import StructureLeg
 from schenberg.position import position_value
 from schenberg.pricing.structured import price_structures
-
-
-def _as_instrument_value(prices: pl.LazyFrame, currency: str = "BRL") -> LazyFrame[InstrumentValue]:
-    """Lift an ``InstrumentPrice`` (pricing output) into an ``InstrumentValue``
-    (position-layer input): ``price`` is the value, tagged with a currency."""
-    return cast(
-        LazyFrame[InstrumentValue],
-        InstrumentValue.validate(
-            prices.rename({"price": "value"}).with_columns(currency=pl.lit(currency)),
-            lazy=True,
-        ),
-    )
 
 
 def _book(name: str = "B") -> LazyFrame[BookContract]:
@@ -47,13 +34,23 @@ def _fx() -> LazyFrame[ReportingFx]:
     )
 
 
-def _component_prices() -> LazyFrame[InstrumentPrice]:
+def _component_values() -> LazyFrame[InstrumentValue]:
     return cast(
-        LazyFrame[InstrumentPrice],
-        InstrumentPrice.from_records(
+        LazyFrame[InstrumentValue],
+        InstrumentValue.from_records(
             [
-                {"instrument_type": "FORWARD", "instrument_id": "ENG-1", "price": 10.0},
-                {"instrument_type": "SWAP", "instrument_id": "SWP-1", "price": 5.0},
+                {
+                    "instrument_type": "FORWARD",
+                    "instrument_id": "ENG-1",
+                    "value": 10.0,
+                    "currency": "BRL",
+                },  # noqa: E501
+                {
+                    "instrument_type": "SWAP",
+                    "instrument_id": "SWP-1",
+                    "value": 5.0,
+                    "currency": "BRL",
+                },  # noqa: E501
             ]
         ),
     )
@@ -85,20 +82,21 @@ def _structure_legs() -> LazyFrame[StructureLeg]:
     )
 
 
-def test_structure_price_is_weighted_sum() -> None:
-    result = cast(pl.DataFrame, price_structures(_structure_legs(), _component_prices()).collect())
+def test_structure_value_is_weighted_sum() -> None:
+    result = cast(pl.DataFrame, price_structures(_structure_legs(), _component_values()).collect())
 
-    assert result.select("price").item() == pytest.approx(2 * 10.0 + (-1) * 3 * 5.0)
+    assert result.select("value").item() == pytest.approx(2 * 10.0 + (-1) * 3 * 5.0)
 
 
-def test_structure_output_columns() -> None:
-    result = cast(pl.DataFrame, price_structures(_structure_legs(), _component_prices()).collect())
+def test_structure_output_is_an_instrument_value() -> None:
+    result = cast(pl.DataFrame, price_structures(_structure_legs(), _component_values()).collect())
 
-    assert result.columns == ["instrument_type", "instrument_id", "price"]
+    assert result.columns == ["instrument_type", "instrument_id", "value", "currency"]
+    assert result.select("currency").item() == "BRL"  # carried from the components
 
 
 def test_structure_instrument_type_and_id() -> None:
-    result = cast(pl.DataFrame, price_structures(_structure_legs(), _component_prices()).collect())
+    result = cast(pl.DataFrame, price_structures(_structure_legs(), _component_values()).collect())
 
     assert result.select("instrument_type").item() == "STRUCTURE"
     assert result.select("instrument_id").item() == "PREPAY-001"
@@ -107,21 +105,19 @@ def test_structure_instrument_type_and_id() -> None:
 def test_custom_structure_type() -> None:
     result = cast(
         pl.DataFrame,
-        price_structures(_structure_legs(), _component_prices(), structure_type="PREPAY").collect(),
+        price_structures(_structure_legs(), _component_values(), structure_type="PREPAY").collect(),
     )
 
     assert result.select("instrument_type").item() == "PREPAY"
 
 
 def test_result_is_lazy_before_collect() -> None:
-    result_lf = price_structures(_structure_legs(), _component_prices())
+    result_lf = price_structures(_structure_legs(), _component_values())
     assert isinstance(result_lf, pl.LazyFrame)
 
 
 def test_structure_value_passes_through_position_value() -> None:
-    structure_values = _as_instrument_value(
-        price_structures(_structure_legs(), _component_prices())
-    )
+    structure_values = price_structures(_structure_legs(), _component_values())
 
     positions = Position.from_records(
         [
@@ -172,20 +168,19 @@ def test_multi_structure_pricing() -> None:
         ),
     )
 
-    result = cast(pl.DataFrame, price_structures(legs, _component_prices()).collect())
+    result = cast(pl.DataFrame, price_structures(legs, _component_values()).collect())
 
     assert result.height == len(["S1", "S2"])
-    prices = dict(zip(result["instrument_id"].to_list(), result["price"].to_list(), strict=True))
-    assert prices["S1"] == pytest.approx(10.0)
-    assert prices["S2"] == pytest.approx(10.0)
+    values = dict(zip(result["instrument_id"].to_list(), result["value"].to_list(), strict=True))
+    assert values["S1"] == pytest.approx(10.0)
+    assert values["S2"] == pytest.approx(10.0)
 
 
 def test_concat_atomic_and_structure_values_for_position_value() -> None:
-    """The full composition: atomic + structure prices → InstrumentValue → position_value."""
-    atomic_prices: LazyFrame[InstrumentPrice] = _component_prices()
-    structure_prices = price_structures(_structure_legs(), atomic_prices)
-    all_prices = pl.concat([atomic_prices, structure_prices], how="diagonal_relaxed")
-    all_values = _as_instrument_value(all_prices)
+    """The full composition: atomic + structure InstrumentValue → position_value."""
+    atomic_values: LazyFrame[InstrumentValue] = _component_values()
+    structure_values = price_structures(_structure_legs(), atomic_values)
+    all_values = pl.concat([atomic_values, structure_values], how="diagonal_relaxed")
 
     positions = Position.from_records(
         [

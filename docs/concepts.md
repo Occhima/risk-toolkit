@@ -213,14 +213,19 @@ group keys, the output schema, and one aggregation per column with the `sum_`,
 `first_`, `count_`, `lit_` helpers:
 
 ```python
-from schenberg.core.fold import Fold, sum_, lit_
+from schenberg.core.fold import Fold, sum_, lit_, first_
 
-forward_price_fold = (
-    Fold("forward_price", input_schema=ForwardPricing)
+forward_value_fold = (
+    Fold("forward_value", input_schema=ForwardPricing)
     .by(F.instrument_id)
-    .returns(InstrumentPrice, instrument_type=lit_("FORWARD"), price=sum_(P.value))
+    .returns(
+        InstrumentValue,
+        instrument_type=lit_("FORWARD"),
+        value=sum_(P.value),
+        currency=first_(P.currency),
+    )
 )
-priced = forward_price_fold.compute(component_rows)   # lazy
+valued = forward_value_fold.compute(component_rows)   # lazy
 ```
 
 Aggregations are *monoidal* (associative reductions with an empty-group unit), and
@@ -249,12 +254,25 @@ def mtm(e=uses(exposure), val=uses(V.value)) -> pl.Expr:
 Because the measures are terms in an internal `FormulaGraph`, the view gets
 `explain()` / `info()` / `to_mermaid()` / `stage()` for free, and stays lazy.
 `side` / `quantity` live on the `Position` and enter only here. Reporting currency
-is a *measure* (`mtm / book_fx`), not a pricing concern. **PnL explain** is a
-second view of the same shape (`position_pnl_explain`): each component is
-`exposure * <component>_value_pnl / book_fx`, and the total is their sum — PnL is a
-*derived measure*, never the definition of a position. **Book/portfolio roll-up is
-a later layer**: a `Fold` over the view's output (`book_value_rollup`), so a
-position is never confused with an aggregate.
+is a *measure* (`mtm / book_fx`), not a pricing concern.
+
+**The view is generic over the pure per-instrument quantity it lifts.** Swap
+`InstrumentValue` for any other pure pricing output and the same machinery applies:
+
+| View | Joined quantity | Measures |
+|------|-----------------|----------|
+| `position_value` | `InstrumentValue` (`value`) | `exposure`, `mtm = exposure*value`, `reported_mtm = mtm/book_fx` |
+| `position_pnl_explain` | `InstrumentPnlExplain` (`*_value_pnl`) | `<c>_mtm_pnl = exposure*<c>_value_pnl/book_fx`, `total = Σ` |
+| `position_risk` | `InstrumentRisk` (the Greeks) | `position_<greek> = exposure * <greek>` |
+
+So **PnL explain** is a derived measure, never the definition of a position; and
+**risk factors** are just another pure per-instrument vector lifted by exposure —
+the one primitive is `scaled(column, by="exposure")` (`mtm` *is*
+`scaled("value")`; a position Greek *is* `scaled("delta")`). Reporting-currency
+conversion of a currency-valued factor is the same `/ book_fx` step.
+
+**Book/portfolio roll-up is a later layer**: a `Fold` over the view's output
+(`book_value_rollup`), so a position is never confused with an aggregate.
 
 ## 8. Shock and MarketPath
 

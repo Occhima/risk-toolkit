@@ -1,11 +1,12 @@
-"""The built-in position views: ``position_value`` and ``position_pnl_explain``.
+"""The built-in position views: ``position_value``, ``position_pnl_explain`` and
+``position_risk``.
 
 These are concrete :class:`~schenberg.position.view.PositionView` declarations —
 callable (``position_value(positions, value=..., book=..., fx=...)``) and
 inspectable (``position_value.explain()``). They are the position-layer analogue
-of the built-in pricers: a thin, declarative composition of the engine, with the
-measures (exposure, notional, mtm, reported mtm; the PnL-explain components and
-their total) exposed by name.
+of the built-in pricers, and the *same* declaration regardless of what pure
+per-instrument quantity is being lifted: a single ``value`` (``mtm``), a PnL
+decomposition (``*_mtm_pnl``), or a vector of risk factors (``position_<greek>``).
 """
 
 from __future__ import annotations
@@ -14,9 +15,11 @@ from schenberg.core.fold import Fold, sum_
 from schenberg.domain.schemas.position import (
     BookContract,
     InstrumentPnlExplain,
+    InstrumentRisk,
     InstrumentValue,
     Position,
     PositionPnlExplain,
+    PositionRisk,
     PositionValue,
     ReportingFx,
 )
@@ -58,6 +61,27 @@ position_pnl_explain = (
     )
     .returns()
 )
+
+
+# ---- position risk: each pure Greek lifted onto the position -----------------
+
+RISK_FACTORS = ("delta", "gamma", "vega", "theta", "rho")
+
+position_risk = (
+    PositionView("position_risk", output=PositionRisk)
+    .spine(Position)
+    .source("risk", InstrumentRisk, on=("instrument_type", "instrument_id"))
+    .add(
+        M.exposure(),
+        # each position_<greek> = exposure * <greek>
+        *[M.risk_factor(factor) for factor in RISK_FACTORS],
+    )
+    .returns()
+)
+"""Lift the pure per-instrument Greeks onto positions. The view is identical in
+shape to ``position_value`` — only the joined quantity differs. Reporting-currency
+risk (for the currency-valued Greeks) is the same ``/ book_fx`` pattern as
+``reported_mtm``: add ``book``/``fx`` sources and a ``reported_*`` measure."""
 
 
 # ---- book roll-up: a Fold, the layer *after* the position view ---------------

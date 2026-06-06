@@ -55,6 +55,26 @@ class InstrumentPnlExplain(SchenbergDataFrameModel):
     total_value_pnl: float
 
 
+class InstrumentRisk(SchenbergDataFrameModel):
+    """Pure per-instrument *risk factors* — sensitivities of one unit's value.
+
+    The same shape as :class:`InstrumentValue`, but a vector of sensitivities
+    instead of a single value (the closed-form Black-Scholes-Merton Greeks; see
+    :class:`~schenberg.domain.schemas.option.OptionGreeks`). Like every pricing
+    output it is **pure**: no ``side``, no position. The position layer lifts each
+    factor by exposure exactly as it lifts ``value`` into ``mtm``.
+    """
+
+    instrument_type: str
+    instrument_id: str
+    currency: str = pa.Field(nullable=True)
+    delta: float
+    gamma: float
+    vega: float
+    theta: float
+    rho: float
+
+
 # ---- position / book context -------------------------------------------------
 
 
@@ -125,14 +145,14 @@ class PositionPnlExplain(SchenbergDataFrameModel):
     total_mtm_pnl: float
 
 
-# ---- deprecated: kept so the pricing-side Fold/structured tests keep working --
+class PositionRisk(SchenbergDataFrameModel):
+    """Position-level risk factors: each instrument sensitivity scaled by exposure,
+    one row per position."""
 
-
-class InstrumentPrice(SchenbergDataFrameModel):
-    """Deprecated alias of :class:`InstrumentValue` (``price`` instead of
-    ``value``). Retained for the pricing-side ``Fold`` / structured-product
-    helpers; new code should emit :class:`InstrumentValue`."""
-
-    instrument_type: str
-    instrument_id: str
-    price: float
+    position_id: str
+    book: str
+    position_delta: float
+    position_gamma: float
+    position_vega: float
+    position_theta: float
+    position_rho: float

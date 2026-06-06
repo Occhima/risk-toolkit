@@ -16,6 +16,7 @@ from schenberg.position.view import Measure, PositionView
 from schenberg.position.views import (
     book_value_rollup,
     position_pnl_explain,
+    position_risk,
     position_value,
 )
 
@@ -25,5 +26,6 @@ __all__ = [
     "book_value_rollup",
     "measures",
     "position_pnl_explain",
+    "position_risk",
     "position_value",
 ]

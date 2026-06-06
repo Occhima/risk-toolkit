@@ -14,15 +14,18 @@ from schenberg.core.graph import uses
 from schenberg.domain.schemas.position import (
     BookContract,
     InstrumentPnlExplain,
+    InstrumentRisk,
     InstrumentValue,
     Position,
     PositionPnlExplain,
+    PositionRisk,
     PositionValue,
     ReportingFx,
 )
 from schenberg.position import (
     book_value_rollup,
     position_pnl_explain,
+    position_risk,
     position_value,
 )
 from schenberg.position.view import PositionView
@@ -239,6 +242,56 @@ def test_pnl_explain_total_equals_sum_of_components() -> None:
     assert out.columns == list(PositionPnlExplain.to_schema().columns.keys())
 
 
+# ---- risk factors (the same view shape, lifting Greeks) ----------------------
+
+
+def _risk() -> pl.LazyFrame:
+    return InstrumentRisk.from_records(
+        [
+            {
+                "instrument_type": "OPTION",
+                "instrument_id": "OPT-1",
+                "currency": "USD",
+                "delta": 0.6,
+                "gamma": 0.02,
+                "vega": 12.0,
+                "theta": -3.0,
+                "rho": 8.0,
+            }
+        ]
+    )
+
+
+def test_position_risk_lifts_each_greek_by_exposure() -> None:
+    positions = Position.from_records(
+        [
+            {
+                "position_id": "P1",
+                "book": "B1",
+                "instrument_type": "OPTION",
+                "instrument_id": "OPT-1",
+                "quantity": 10.0,
+                "side": -1.0,  # a short option position
+                "unit_notional": None,
+            }
+        ]
+    )
+    out = _collect(position_risk(positions, risk=_risk()))
+    assert out.columns == list(PositionRisk.to_schema().columns.keys())
+    # exposure = side * quantity = -10; position_<greek> = exposure * <greek>
+    assert out.select("position_delta").item() == pytest.approx(-10.0 * 0.6)
+    assert out.select("position_vega").item() == pytest.approx(-10.0 * 12.0)
+    assert out.select("position_theta").item() == pytest.approx(-10.0 * -3.0)
+
+
+def test_position_risk_is_the_same_view_shape() -> None:
+    # value / pnl-explain / risk are all PositionViews — same machinery, different
+    # joined quantity; introspection works identically.
+    assert "PositionView position_risk -> PositionRisk" in position_risk.explain()
+    assert position_risk.info()["measures"][0] == "exposure"
+    assert isinstance(position_risk(_positions(), risk=_risk()), pl.LazyFrame)
+
+
 # ---- null propagation --------------------------------------------------------
 
 
@@ -311,9 +364,10 @@ def test_validate_flag_can_be_turned_off() -> None:
     )
     assert isinstance(raw, pl.LazyFrame)
     validated = position_value(_positions(), value=_values(), book=_book(), fx=_fx())
-    assert _collect(raw).sort("position_id").to_dicts() == _collect(validated).sort(
-        "position_id"
-    ).to_dicts()
+    assert (
+        _collect(raw).sort("position_id").to_dicts()
+        == _collect(validated).sort("position_id").to_dicts()
+    )
 
 
 def test_missing_source_frame_is_a_clear_error() -> None:

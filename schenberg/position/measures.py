@@ -51,6 +51,26 @@ def position_notional(
     return Measure(register)
 
 
+def scaled(column: str, *, by: str = "exposure", name: str | None = None) -> Measure:
+    """A position-scaled quantity: ``by * column`` (``exposure * column``).
+
+    The one primitive behind every "lift a pure per-instrument quantity onto a
+    position" measure — ``mtm`` is ``scaled("value", name="mtm")``, a position
+    Greek is ``scaled("delta", name="position_delta")``. Defaults ``name`` to
+    ``position_<column>``.
+    """
+    measure_name = name or f"position_{column}"
+
+    def register(view: PositionView):
+        @view.measure(name=measure_name)
+        def _(factor=uses(view.col(by)), x=uses(view.col(column))) -> pl.Expr:
+            return factor * x
+
+        return _
+
+    return Measure(register)
+
+
 def mtm(*, exposure: str = "exposure", value: str = "value", name: str = "mtm") -> Measure:
     """Mark-to-market of the position: ``exposure * instrument_value``."""
 
@@ -62,6 +82,12 @@ def mtm(*, exposure: str = "exposure", value: str = "value", name: str = "mtm") 
         return _
 
     return Measure(register)
+
+
+def risk_factor(factor: str, *, exposure: str = "exposure", prefix: str = "position_") -> Measure:
+    """Lift one pure per-instrument risk factor onto a position:
+    ``exposure * <factor>`` -> ``<prefix><factor>`` (e.g. ``position_delta``)."""
+    return scaled(factor, by=exposure, name=f"{prefix}{factor}")
 
 
 def reported_mtm(*, mtm: str = "mtm", rate: str = "book_fx", name: str = "reported_mtm") -> Measure:
