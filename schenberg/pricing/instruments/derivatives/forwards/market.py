@@ -6,7 +6,6 @@ from schenberg.pricing.instruments.derivatives.forwards.contracts import (
     ForwardContractPricing,
 )
 from schenberg.pricing.market import CURVES
-from schenberg.pricing.market import FX as CURRENCY
 
 
 class ForwardMarket(MarketRequirements[ForwardContractPricing]):
@@ -16,7 +15,6 @@ class ForwardMarket(MarketRequirements[ForwardContractPricing]):
 
         m.forward_price
         m.risk_free
-        m.currency
 
     Keep these names stable because formulas and explain/mermaid output should
     read naturally.
@@ -24,4 +22,3 @@ class ForwardMarket(MarketRequirements[ForwardContractPricing]):
 
     forward_price: Term[float] = requires(CURVES.forward_rate().by(indexer=contract.indexer))
     risk_free: Term[float] = requires(CURVES.risk_free_rate().by(indexer=contract.indexer))
-    currency: Term[float] = requires(CURRENCY.rate())

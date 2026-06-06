@@ -30,8 +30,13 @@ class MarketSnapshot:
         *,
         as_of: date,
         sources: Iterable[MarketSource],
+        validate: bool = True,
     ) -> MarketSnapshot:
-        return cls(as_of=as_of, sources={source.name: source for source in sources})
+        materialized = tuple(sources)
+        if validate:
+            for source in materialized:
+                source.validate_unique_keys()
+        return cls(as_of=as_of, sources={source.name: source for source in materialized})
 
     def source(self, name: str) -> MarketSource:
         try:

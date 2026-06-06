@@ -2,7 +2,7 @@
 
 ``SchenbergDataFrameModel`` is the Pandera base every boundary schema extends.
 ``price_function`` marks a top-level pricer and validates its typed LazyFrame
-inputs/outputs lazily, so contract violations surface at ``collect()`` with a
+inputs/outputs lazily, so contract violations surface at ``collect`` with a
 clear schema error rather than as a downstream column-not-found.
 """
 

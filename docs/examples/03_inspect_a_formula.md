@@ -29,7 +29,6 @@ flowchart LR
     future_value --> present_value
     discount_factor --> present_value
     present_value --> value
-    currency --> value
 ```
 
 ## Source

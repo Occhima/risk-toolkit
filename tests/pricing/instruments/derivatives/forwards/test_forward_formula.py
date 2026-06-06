@@ -58,9 +58,10 @@ def test_price_forward_is_lazy_and_computes_expected_values() -> None:
     expected_discount_factor = math.exp(-0.10 * 1.0)
     expected_present_value = expected_future_value * expected_discount_factor
 
+    tolerance = 1e-12
     assert got["future_value"][0] == expected_future_value
-    assert abs(got["present_value"][0] - expected_present_value) < 1e-12
-    assert abs(got["value"][0] - expected_present_value) < 1e-12
+    assert abs(got["present_value"][0] - expected_present_value) < tolerance
+    assert abs(got["value"][0] - expected_present_value) < tolerance
 
 
 def test_price_forward_returns_lazy_frame() -> None:

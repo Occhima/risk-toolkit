@@ -7,7 +7,7 @@ wired into an open, typed :class:`FormulaGraph`. The same graph declaration is
 :meth:`stage`), to market requirements, to Mermaid diagrams (:meth:`to_mermaid`),
 to explanation text (:meth:`explain`), or to dependency / contract reports
 (:meth:`info`). rustworkx owns the topology; Polars owns execution. Nothing here
-calls ``.collect()``.
+calls ``collect``.
 """
 
 from __future__ import annotations
@@ -511,10 +511,11 @@ class FormulaGraph:
     ) -> pl.LazyFrame:
         """Interpret the graph as lazy Polars: attach market data, compile each
         view column to a nested expression, add them with one ``with_columns``.
-        Stays lazy."""
-        frame = self._attach_market(frame, market)
+        Stays lazy and fails fast when required boundary columns are absent.
+        """
         mapping = self._resolve_view(outputs, view)
-        frame = self._with_missing_inputs(frame, mapping.values())
+        frame = self._attach_market(frame, market, allow_missing=False, view=view)
+        self._require_inputs(frame, mapping.values(), view=view)
         cache: dict[str, pl.Expr] = {}
         columns = [self.expr(node, _cache=cache).alias(col) for col, node in mapping.items()]
         return frame.with_columns(columns)
@@ -526,12 +527,13 @@ class FormulaGraph:
         market: MarketSnapshot | None = None,
         view: str | None = None,
         targets: list[str] | None = None,
+        allow_missing: bool = False,
     ) -> pl.LazyFrame:
         """Staged-debug interpretation: materialize every intermediate term as its
         own column. Wider/slower than :meth:`compute`, but every step is
-        inspectable (nulls propagate, so the first unexpectedly-null column is the
-        root cause). Stays lazy."""
-        frame = self._attach_market(frame, market)
+        inspectable. Missing inputs fail by default; pass ``allow_missing=True``
+        only for null-propagation debugging. Stays lazy."""
+        frame = self._attach_market(frame, market, allow_missing=allow_missing, view=view)
         if targets is None:
             if view is None:
                 raise ValueError("pass targets=[...] or view=...")
@@ -555,6 +557,11 @@ class FormulaGraph:
         for t in targets:
             emit(t)
 
+        if allow_missing:
+            frame = self._add_missing_input_columns(frame, targets)
+        else:
+            self._require_inputs(frame, targets, view=view)
+
         for name in order:
             term = cast(Term[Any], self._graph[self._indices[name]])
             cols = [pl.col(self._resolve(d)) for d in term.deps]
@@ -562,27 +569,70 @@ class FormulaGraph:
             frame = frame.with_columns(term.fn(*cols).alias(name))
         return frame
 
-    def _attach_market(self, lf: pl.LazyFrame, market: MarketSnapshot | None) -> pl.LazyFrame:
+    def _attach_market(
+        self,
+        lf: pl.LazyFrame,
+        market: MarketSnapshot | None,
+        *,
+        allow_missing: bool,
+        view: str | None,
+    ) -> pl.LazyFrame:
         if self._market:
             if market is None:
                 raise ValueError(f"graph {self.name!r} needs a MarketSnapshot")
             for req in self._market:
+                lf = self._prepare_market_join_keys(lf, req.left_keys, allow_missing, view)
                 lf = market.attach(lf, req)
         return lf
 
-    def _with_missing_inputs(self, lf: pl.LazyFrame, targets: Iterable[str]) -> pl.LazyFrame:
-        required = {
+    def _boundary_inputs_for(self, targets: Iterable[str]) -> set[str]:
+        return {
             dep
             for target in targets
             for dep in self.dependencies_of(target) | {target}
             if self._graph[self._indices[dep]].fn is None
         }
+
+    def _missing_columns(self, lf: pl.LazyFrame, names: Iterable[str]) -> list[str]:
+        required = set(names)
         if not required:
-            return lf
+            return []
         present = set(lf.collect_schema().names())
-        missing = sorted(required - present)
+        return sorted(required - present)
+
+    def _missing_input_error(self, missing: Iterable[str], *, view: str | None) -> ValueError:
+        view_text = f" for view {view!r}" if view is not None else ""
+        names = sorted(missing)
+        return ValueError(
+            f"graph {self.name!r}{view_text} is missing required input column(s): {names}. "
+            "Hint: use stage(..., allow_missing=True) only for debugging."
+        )
+
+    def _require_inputs(
+        self, lf: pl.LazyFrame, targets: Iterable[str], *, view: str | None
+    ) -> None:
+        missing = self._missing_columns(lf, self._boundary_inputs_for(targets))
+        if missing:
+            raise self._missing_input_error(missing, view=view)
+
+    def _add_missing_input_columns(self, lf: pl.LazyFrame, targets: Iterable[str]) -> pl.LazyFrame:
+        missing = self._missing_columns(lf, self._boundary_inputs_for(targets))
         if not missing:
             return lf
+        return lf.with_columns(pl.lit(None).alias(name) for name in missing)
+
+    def _prepare_market_join_keys(
+        self,
+        lf: pl.LazyFrame,
+        keys: Iterable[str],
+        allow_missing: bool,
+        view: str | None,
+    ) -> pl.LazyFrame:
+        missing = self._missing_columns(lf, keys)
+        if not missing:
+            return lf
+        if not allow_missing:
+            raise self._missing_input_error(missing, view=view)
         return lf.with_columns(pl.lit(None).alias(name) for name in missing)
 
     def _resolve_view(self, outputs: Mapping[str, str] | None, view: str | None) -> dict[str, str]:
@@ -832,7 +882,7 @@ class Formula:
     the contract, market or formula term of the same name -- no column mapping. As
     a :class:`Computation` (``compute`` / ``has_view`` / ``view_schema``) it slots
     directly into a :class:`~schenberg.core.router.Router` or
-    :class:`~schenberg.core.structure.Structure`.
+    higher-level composition.
 
     It is a typed face over :class:`FormulaGraph` -- the private engine that owns
     topology and Polars compilation; the requirements compile to the same

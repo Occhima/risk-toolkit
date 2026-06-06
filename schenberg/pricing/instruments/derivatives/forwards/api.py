@@ -17,11 +17,6 @@ from schenberg.pricing.instruments.derivatives.forwards.formulas import (
     forward_formula,
 )
 
-# A temporary column that preserves the contract's own-currency *denomination*
-# (a string like "BRL") across pricing. The forward formula's market reads write
-# an ``fx_rate`` into a ``currency`` column, which would otherwise clobber it.
-_OWN_CURRENCY = "_own_currency"
-
 
 @pa.check_types(lazy=True)
 def price_forward(
@@ -29,7 +24,9 @@ def price_forward(
     market: MarketSnapshot,
 ) -> LazyFrame[ForwardPricing]:
     """Price generic forward contracts lazily."""
-    return forward_formula.compute(trades, market=market, view="output")
+    return cast(
+        "LazyFrame[ForwardPricing]", forward_formula.compute(trades, market=market, view="output")
+    )
 
 
 def forward_value_frame(
@@ -42,19 +39,16 @@ def forward_value_frame(
     """Project a priced forward into an :class:`InstrumentValue` frame.
 
     The position layer wants a **pure, own-currency** value: ``present_value``
-    (the forward value discounted, before the formula's FX step), tagged with the
-    contract's own currency and a stable ``instrument_type``. Reporting-currency
-    conversion is then the position layer's concern (``ReportingFx``), so the
-    forward formula's FX-adjusted ``value`` is *not* used here — that would
-    convert twice. Stays lazy.
+    (the forward value discounted), tagged with the contract's own currency and a
+    stable ``instrument_type``. Reporting-currency conversion is the position
+    layer's concern (``ReportingFx``). Stays lazy.
     """
-    prepared = trades.with_columns(pl.col("currency").alias(_OWN_CURRENCY))
-    priced = formula.compute(prepared, market=market, view="output")
+    priced = formula.compute(trades, market=market, view="output")
     return priced.select(
         instrument_type=pl.lit(instrument_type),
         instrument_id=pl.col("instrument_id"),
         value=pl.col("present_value"),
-        currency=pl.col(_OWN_CURRENCY),
+        currency=pl.col("currency"),
     )
 
 

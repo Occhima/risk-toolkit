@@ -12,7 +12,7 @@ Two market objects are provided:
   quote kind separated into ``VolatilityConvention``.
 
 Both objects keep their data as ``polars.LazyFrame`` end to end and never call
-``.collect()`` on the normalization or export paths.
+``collect`` on the normalization or export paths.
 """
 
 from schenberg.market_data.objects.compounding import Compounding, CompoundingKind

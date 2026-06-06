@@ -63,7 +63,9 @@ class SchenbergDataFrameModel(ContractAdapterMixin, pa.DataFrameModel):
             lazy: bool = False,
             inplace: bool = False,
         ) -> pl.LazyFrame:
-            return original_validate(cls.resolve(check_obj), head, tail, sample, random_state, lazy, inplace)
+            return original_validate(
+                cls.resolve(check_obj), head, tail, sample, random_state, lazy, inplace
+            )
 
         schema.validate = _resolve_then_validate
         return schema

@@ -12,8 +12,8 @@ opaque expression.
 A fold is monoidal: each output is the reduction of a column under an associative
 operation (sum, first, count), optionally weighted or filtered, with the empty
 group as the unit. The same :class:`Fold` powers both structured-instrument
-aggregation (via :class:`~schenberg.core.structure.Structure`) and portfolio /
-book roll-ups. Nothing here calls ``.collect()``.
+aggregation and portfolio /
+book roll-ups. Nothing here calls ``collect``.
 """
 
 from __future__ import annotations

@@ -1,33 +1,15 @@
-# 02 — Energy forward
+# Energy forward and formula reuse
 
-**Run it:** `uv run python docs/examples/02_energy_forward.py`
-
-The energy forward reuses the *same* formula as the generic forward. The only
-differences are:
-
-1. `forward_price` comes from `energy_forward_curve` keyed by
-   `(submarket, delivery_period)` instead of a rates curve.
-2. The `EnergyForwardPricing` contract adds `submarket`, `incentive`, and
-   `delivery_period` columns — routing/selection coordinates, not new math.
-3. The **PLD** indexer overrides the default fixing-date rule: its
-   `index_fixing_date` is the **6th business day of the month after delivery**.
-
-## Contract specialisation without new formulas
-
-```
-EnergyForwardPricing
-  ├── ForwardContractPricing      ← core contract + mixin rules
-  │     ├── IndexerFixingMixin    ← index_fixing_date rule (default: same_day)
-  │     ├── CurrencyFixingMixin   ← currency_fixing_date rule
-  │     └── TenorMixin            ← tenor + payment_days
-  └── [override] PLD rule         ← 6th biz-day of following month
-```
-
-Adding a new indexer convention is one `@rule_for` override on a subclass.
-The formula graph never needs to change.
-
-## Source
+Energy forwards reuse the generic forward formula builder and override only the
+contract schema plus market requirements:
 
 ```python
---8<-- "docs/examples/02_energy_forward.py"
+from schenberg.pricing.instruments.derivatives.forwards.energy.api import energy_forward_formula
+from schenberg.pricing.instruments.derivatives.forwards.energy.market import EnergyForwardMarket
+
+assert energy_forward_formula.name == "energy_forward"
+assert EnergyForwardMarket.__requirements__["forward_price"].table == "energy_forward_curve"
 ```
+
+Use `price_energy_forward(trades, market)` for pure own-currency pricing or
+`energy_forward_instrument_value(trades, market)` to feed the position layer.

@@ -59,7 +59,7 @@ class ForwardContractPricing(
 
         future_value = forward_price - strike
         present_value = future_value * discount_factor
-        value = present_value * currency
+        value = present_value
     """
 
     instrument_id: str

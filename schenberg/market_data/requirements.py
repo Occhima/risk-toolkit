@@ -21,7 +21,7 @@ Three ideas make this read well:
   the rare contract that names its columns differently.
 * **``contract.x`` is a validated proxy.** Every reference is checked against the
   ``[EnergyForwardContract]`` schema when the class is created, so a typo fails at
-  import, not at ``collect()``.
+  import, not at ``collect``.
 
 At class creation each field is resolved to the engine's existing
 :class:`~schenberg.core.market.MarketRequirement` (output = field name) and the

@@ -515,7 +515,8 @@ def test_by_multiple_keys() -> None:
     )
     valued = position_value(positions, value=_values(), book=book2, fx=_fx())
     rolled = _collect(position_value.by(PV.book).compute(valued))
-    assert rolled.height == 2
+    expected_books = 2
+    assert rolled.height == expected_books
 
 
 def test_by_unknown_key_raises() -> None:

@@ -10,7 +10,7 @@ def test_energy_forward_reuses_forward_formula_terms() -> None:
 
     assert "forward_price" in info.market_outputs
     assert "risk_free" in info.market_outputs
-    assert "currency" in info.market_outputs
+    assert "currency" not in info.market_outputs
     assert "future_value" in info.formula_nodes
     assert "present_value" in info.formula_nodes
     assert "value" in info.formula_nodes
