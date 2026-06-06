@@ -107,9 +107,7 @@ def test_fixing_direct_is_the_rule() -> None:
 
 
 def test_fixing_conditional_branches_on_selector() -> None:
-    fixing = (
-        Fixing.on("indexer").when("CPI", add_days("tenor", 5)).otherwise(same_day("tenor"))
-    )
+    fixing = Fixing.on("indexer").when("CPI", add_days("tenor", 5)).otherwise(same_day("tenor"))
     out = _raw().with_columns(fixing.expr().alias("fix")).select("fix").collect()
     # DI -> same day; CPI -> +5 days
     assert out["fix"].to_list() == [date(2027, 1, 1), date(2028, 1, 6)]

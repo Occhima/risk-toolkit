@@ -363,9 +363,7 @@ def test_compute_output_conforms_to_the_contract_schema() -> None:
 
 def test_validate_flag_can_be_turned_off() -> None:
     # validate=False skips the boundary contract but stays lazy and equal.
-    raw = position_value.plan(
-        _positions(), value=_values(), book=_book(), fx=_fx(), validate=False
-    )
+    raw = position_value.plan(_positions(), value=_values(), book=_book(), fx=_fx(), validate=False)
     assert isinstance(raw, pl.LazyFrame)
     validated = position_value(_positions(), value=_values(), book=_book(), fx=_fx())
     assert (

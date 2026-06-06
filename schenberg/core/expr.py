@@ -160,9 +160,7 @@ def compile_polars(e: Expr) -> pl.Expr:
             return compile_polars(x).sqrt()
         case Expr(op="where", args=(cond, a, b)):
             return (
-                pl.when(compile_polars(cond))
-                .then(compile_polars(a))
-                .otherwise(compile_polars(b))
+                pl.when(compile_polars(cond)).then(compile_polars(a)).otherwise(compile_polars(b))
             )
         case Expr(op=op, args=(a, b)) if op in _POLARS_BINARY:
             return _POLARS_BINARY[op](compile_polars(a), compile_polars(b))

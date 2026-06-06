@@ -26,9 +26,7 @@ def _forward() -> Formula:
     f = Formula[ForwardPricingInput, ForwardPricing]("forward")
     c = f.contract
     year_fraction = f.let("year_fraction", c.payment_days / 252.0, symbol="T")
-    discount_factor = f.let(
-        "discount_factor", exp(-c.risk_free * year_fraction), symbol="DF"
-    )
+    discount_factor = f.let("discount_factor", exp(-c.risk_free * year_fraction), symbol="DF")
     future_value = f.let("future_value", c.forward_price - c.strike, symbol="FV")
     f.let("present_value", future_value * discount_factor, symbol="PV")
     f.returns(ForwardPricing)
