@@ -35,6 +35,7 @@ dev = [
   "mkdocs-material>=9.5",
   "mkdocstrings[python]>=0.29",
   "marimo>=0.9",
+  "matplotlib>=3.9",
 ]
 
 [project.optional-dependencies]
@@ -78,7 +79,9 @@ ignore = ["PLR0913"]
 # marimo notebooks are cell-DAGs of identically-named ``def _`` functions whose
 # last expression is the cell's display value; that idiom is the notebook format,
 # not a smell.
-"examples/notebooks/*.py" = ["F811", "B018", "PLR1711", "PLR0913", "PLR2004", "PLC0415", "I001"]
+"docs/examples/05_*.py" = ["F811", "B018", "PLR1711", "PLR0913", "PLR2004", "PLC0415", "I001", "E402"]
+"docs/examples/06_*.py" = ["F811", "B018", "PLR1711", "PLR0913", "PLR2004", "PLC0415", "I001", "E402"]
+"docs/examples/07_*.py" = ["F811", "B018", "PLR1711", "PLR0913", "PLR2004", "PLC0415", "I001", "E402"]
 
 [tool.ruff.format]
 quote-style = "double"

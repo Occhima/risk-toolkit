@@ -7,7 +7,7 @@ explain the period PnL as a roll / curve / fx waterfall — repricing under
 cumulative market moves, all with base Schenberg code. The market data is
 fabricated for the demo.
 
-    uv run marimo edit examples/notebooks/usdbrl_book_valuation.py
+    uv run marimo edit docs/examples/07_usdbrl_book_valuation.py
 """
 
 import marimo

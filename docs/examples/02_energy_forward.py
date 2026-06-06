@@ -3,36 +3,29 @@
 Run with:  uv run python docs/examples/02_energy_forward.py
 
 The energy pricer reuses the *generic* forward formula
-(``forward_price - strike → future_value → present_value → value``) and only
+(``forward_rate - strike → future_value → present_value → value``) and only
 adds *where the numbers come from*:
 
-- ``forward_price`` is looked up on the energy curve by ``(submarket, delivery_period)``.
-- ``risk_free`` is discounted from the DI curve keyed by ``(indexer, payment_days)``.
-The formula graph never mentions "energy" — the specialisation lives entirely in
-``EnergyForwardMarket`` (the market requirements) and in the ``EnergyForwardPricing``
-contract which overrides the PLD fixing-date rule.
+- ``forward_rate`` (renamed from ``forward_price``) is read from an
+  ``energy_forward_curve`` source keyed by ``(submarket, delivery_period)``.
+- ``risk_free_rate`` is read from the ``curves`` source keyed by
+  ``(id_indexador, tenor_days)`` exactly as for a generic forward.
 
-Contract rules in action: PLD's ``index_fixing_date`` is set to the **6th business
-day of the month after delivery** automatically from the tenor column. You can
-override it by supplying the column explicitly.
+The formula graph is identical to the generic forward — the specialisation
+lives entirely in the market roles declared on ``EnergyForwardPricing``.
 """
 
 from __future__ import annotations
 
 from datetime import date
-from typing import cast
 
 import polars as pl
-from pandera.typing.polars import LazyFrame
 from schenberg.market_data.snapshot import MarketSnapshot
 from schenberg.market_data.sources import MarketSource
-from schenberg.pricing.instruments.derivatives.forwards.energy import (
-    EnergyForwardPricing,
-    price_energy_forward,
-)
+from schenberg.pricing.api import price_energy_forward
 
 # ---------------------------------------------------------------------------
-# Market: energy curve + discount curve
+# Market: energy curve (submarket/delivery_period) + discount curve
 # ---------------------------------------------------------------------------
 market = MarketSnapshot.from_sources(
     as_of=date(2026, 6, 5),
@@ -65,37 +58,28 @@ market = MarketSnapshot.from_sources(
 )
 
 # ---------------------------------------------------------------------------
-# Trades: two SE contracts, one NE — different delivery periods
-#
-# index_fixing_date is intentionally omitted. The PLD rule fills it as the
-# 6th business day of the month following tenor (e.g. 2026-07-xx).
+# Trades: two SE contracts, one NE
 # ---------------------------------------------------------------------------
-trades = cast(
-    LazyFrame[EnergyForwardPricing],
-    pl.DataFrame(
-        {
-            "instrument_id": ["ENG-1", "ENG-1", "ENG-2"],
-            "tenor": [date(2026, 7, 1), date(2026, 8, 1), date(2026, 7, 1)],
-            "indexer": ["PLD", "PLD", "PLD"],
-            "currency": ["BRL", "BRL", "BRL"],
-            "strike": [250.0, 250.0, 230.0],
-            "payment_days": [252, 252, 252],
-            "submarket": ["SE", "SE", "NE"],
-            "incentive": ["I0", "I0", "I0"],
-            "delivery_period": ["2026-07", "2026-08", "2026-07"],
-        }
-    ).lazy(),
-)
+trades = pl.DataFrame(
+    {
+        "instrument_id": ["ENG-1", "ENG-2", "ENG-3"],
+        "indexer": ["PLD", "PLD", "PLD"],
+        "currency": ["BRL", "BRL", "BRL"],
+        "strike": [250.0, 250.0, 230.0],
+        "payment_days": [252, 252, 252],
+        "submarket": ["SE", "SE", "NE"],
+        "delivery_period": ["2026-07", "2026-08", "2026-07"],
+    }
+).lazy()
 
 result = price_energy_forward(trades, market)
 print(
-    cast(pl.DataFrame, result.collect()).select(
+    result.collect().select(
         "instrument_id",
         "submarket",
         "delivery_period",
         "future_value",
         "present_value",
         "value",
-        "index_fixing_date",
     )
 )

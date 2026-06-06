@@ -3,31 +3,27 @@
 Run with:  uv run python docs/examples/03_inspect_a_formula.py
 
 The same declaration that computes prices also explains itself: required inputs,
-market reads, formula nodes, output columns, a Mermaid flowchart, and a
-dependency trace. None of this ever calls ``collect`` — the graph is a
-program you can read before running.
+formula nodes in dependency order, a Mermaid flowchart, and a dependency trace.
+None of this ever calls ``collect`` — the graph is a program you can read before
+running.
 
-This is the key property of the declarative DSL: every piece of pricing logic
-is statically inspectable at the formula level, not just at the data level.
+This is the key property of the declarative DSL: every piece of pricing logic is
+statically inspectable at the formula level, not just at the data level.
 """
 
 from __future__ import annotations
 
-from schenberg.pricing.instruments.derivatives.forwards.energy.api import (
-    energy_forward_formula,
-)
-from schenberg.pricing.instruments.derivatives.forwards.formulas import forward_formula
+from schenberg.pricing.api import energy_forward_formula, forward_formula
 
 # ---------------------------------------------------------------------------
 # 1. What does the generic forward need from the caller?
 # ---------------------------------------------------------------------------
-print("=== Generic forward — required contract inputs ===")
-print(sorted(forward_formula.required_inputs()))
-# ['currency', 'indexer', 'payment_days', 'strike']
-# (plus tenor / instrument_id from the contract schema — those are also inputs)
+print("=== Generic forward — required inputs for 'output' view ===")
+print(sorted(forward_formula.required_inputs("output")))
+# ['forward_rate', 'payment_days', 'risk_free_rate', 'strike']
 
 # ---------------------------------------------------------------------------
-# 2. Full explain: inputs, market reads, formula path, returns
+# 2. Full explain: inputs, formula path, returns
 # ---------------------------------------------------------------------------
 print("\n=== Generic forward — explain(view='output') ===")
 print(forward_formula.explain(view="output"))
@@ -37,26 +33,32 @@ print(forward_formula.explain(view="output"))
 # ---------------------------------------------------------------------------
 info = forward_formula.info(view="output")
 print("\n=== GraphInfo fields ===")
-print("market_outputs :", info.market_outputs)
-print("formula_nodes  :", info.formula_nodes)
+print("required_inputs  :", info.required_inputs)
+print("formula_nodes    :", info.formula_nodes)
+print("intermediate_nodes:", info.intermediate_nodes)
+print("view_nodes       :", info.view_nodes)
 
 # ---------------------------------------------------------------------------
 # 4. Mermaid diagram — paste into https://mermaid.live to visualise
 # ---------------------------------------------------------------------------
 print("\n=== Mermaid flowchart ===")
-print(forward_formula.to_mermaid(view="output"))
+print(forward_formula.to_mermaid())
 
 # ---------------------------------------------------------------------------
 # 5. Dependency trace: what does 'present_value' depend on?
 # ---------------------------------------------------------------------------
-print("=== Dependencies of present_value ===")
+print("\n=== Dependencies of present_value ===")
 print(sorted(forward_formula.dependencies_of("present_value")))
 
 # ---------------------------------------------------------------------------
-# 6. Energy forward inherits the same formula — only the market differs
+# 6. LaTeX rendering — the formulas as written, not reconstructed
+# ---------------------------------------------------------------------------
+print("\n=== Formula strings ===")
+for _name, formula in forward_formula.formulas().items():
+    print(f"  {formula}")
+
+# ---------------------------------------------------------------------------
+# 7. Energy forward — same formula, different market roles
 # ---------------------------------------------------------------------------
 print("\n=== Energy forward — explain(view='output') ===")
 print(energy_forward_formula.explain(view="output"))
-
-print("\n=== Energy forward — Mermaid ===")
-print(energy_forward_formula.to_mermaid(view="output"))
