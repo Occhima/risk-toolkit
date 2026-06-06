@@ -91,18 +91,23 @@ aggregates with a `Fold` (not an ad-hoc `group_by(...).agg(...)`) to the level y
 report at — mirroring the built-in pricers:
 
 ```python
-from schenberg.core.fold import Fold, sum_, lit_
+from schenberg.core.fold import Fold, sum_, lit_, first_
 
 my_fold = (
     Fold("my_instrument", input_schema=MyPricing)
     .by("instrument_id")
-    .returns(InstrumentPrice, instrument_type=lit_("MY_TYPE"), price=sum_("value"))
+    .returns(
+        InstrumentValue,
+        instrument_type=lit_("MY_TYPE"),
+        value=sum_("value"),
+        currency=first_("currency"),
+    )
 )
 
 def price_my_instrument(legs, market):
     prepared = add_lookup_keys(legs)
     priced = g.compute(prepared, market=market, view="pricing")
-    return my_fold.compute(priced)
+    return my_fold.compute(priced)   # -> LazyFrame[InstrumentValue]
 ```
 
 For a structured instrument (component pricing + exposure + fold), assemble a
@@ -148,19 +153,143 @@ normally, then combine with `price_structures`:
 
 ```python
 from schenberg.pricing.structured import price_structures
-from schenberg.position.functions import with_prices
+from schenberg.position import position_value
 
-atomic_prices = pl.concat([forward_prices, swap_prices], how="diagonal_relaxed")
-structure_prices = price_structures(structure_legs, atomic_prices)
-all_prices = pl.concat([atomic_prices, structure_prices], how="diagonal_relaxed")
-priced_positions = with_prices(positions, all_prices)
+atomic_values = pl.concat([forward_values, swap_values], how="diagonal_relaxed")
+structure_values = price_structures(structure_legs, atomic_values)
+all_values = pl.concat([atomic_values, structure_values], how="diagonal_relaxed")
+
+valued = position_value(positions, value=all_values, book=book, fx=fx)
 ```
 
 `structure_legs` is a `StructureLeg` frame with columns
 `structure_id, leg_id, component_instrument_type, component_instrument_id,
-quantity, side`.  The output of `price_structures` has the same shape as
-any other `InstrumentPrice` frame (`instrument_type, instrument_id, price`)
-with `instrument_type = "STRUCTURE"`.
+quantity, side`.  `price_structures` consumes and emits `InstrumentValue`
+(`instrument_type, instrument_id, value, currency`) with
+`instrument_type = "STRUCTURE"`, so it concatenates with the atomic values and
+feeds `position_value` directly.
+
+## Value a position — the position layer
+
+Pricing returns a **pure** `InstrumentValue` (`value`, no `side`). Turning that
+into *how much a position is worth* is a separate, declarative layer: a
+`PositionView` joins the position spine, the instrument value, and the
+book/reporting context, and exposes the measures (`exposure`, `position_notional`,
+`mtm`, `reported_mtm`) by name — the same way a pricer exposes formulas.
+
+```python
+import polars as pl
+from schenberg.core.graph import uses
+from schenberg.position.view import PositionView
+from schenberg.domain.schemas.position import (
+    Position, InstrumentValue, BookContract, ReportingFx, PositionValue,
+)
+
+view = (
+    PositionView("position_value", output=PositionValue)
+    .spine(Position)
+    .source("value", InstrumentValue, on=("instrument_type", "instrument_id"))
+    .source("book", BookContract, on="book")
+    .source("fx", ReportingFx, on=("currency", "reporting_currency"))
+)
+P, V, FX = view.position, view.value, view.fx
+
+@view.measure(symbol="E")
+def exposure(side=uses(P.side), qty=uses(P.quantity)) -> pl.Expr:
+    return side * qty            # direction enters HERE, never in pricing
+
+@view.measure(symbol="MTM")
+def mtm(e=uses(exposure), val=uses(V.value)) -> pl.Expr:
+    return e * val
+
+@view.measure
+def reported_mtm(m=uses(mtm), rate=uses(FX.book_fx)) -> pl.Expr:
+    return m / rate              # reporting currency is a measure, not pricing
+
+view.returns()
+valued = view(positions, value=prices, book=book, fx=fx)   # lazy LazyFrame[PositionValue]
+```
+
+The common measures also come from a small stdlib, so the whole declaration can
+read as data — `view.add(M.exposure(), M.mtm(), M.reported_mtm())`. The built-in
+`schenberg.position.position_value` and `schenberg.position.position_pnl_explain`
+are exactly such declarations; `view.explain()` / `.to_mermaid()` / `.stage(...)`
+describe and debug them, and book/portfolio roll-up is a *later* layer — a `Fold`
+(`schenberg.position.book_value_rollup`), never part of the view.
+
+The built-in pricers emit `InstrumentValue` directly, so they slot straight into
+`position_value` — no manual `rename`:
+
+```python
+from schenberg.pricing.api import forward_instrument_value
+from schenberg.position import position_value
+
+values = forward_instrument_value(trades, market)        # LazyFrame[InstrumentValue]
+valued = position_value(positions, value=values, book=book, fx=fx)
+```
+
+The emitted `value` is the **pure, own-currency** present value and `currency`
+is the instrument's own denomination, so the reporting-currency conversion stays
+a position-layer concern (`ReportingFx` → `reported_mtm`) and never happens twice.
+
+## Risk factors are the same view, a different quantity
+
+A `PositionView` lifts *any* pure per-instrument quantity onto a position — not
+just a single `value`. Risk factors (the closed-form Greeks) are a vector of pure
+sensitivities (`InstrumentRisk`), lifted by exposure exactly as `value` becomes
+`mtm`. The one primitive is `scaled(column, by=exposure)` — `mtm` *is*
+`scaled(IV.value)`; a position Greek *is* `scaled(IR.delta)`. Columns are
+referenced by **typed** schema columns (`cols(Schema).column`), never strings, so
+a typo fails at construction:
+
+```python
+from schenberg.core.columns import cols
+from schenberg.position import measures as M
+from schenberg.position.view import PositionView
+from schenberg.domain.schemas.position import Position, InstrumentRisk, PositionRisk
+
+IR = cols(InstrumentRisk)
+GREEKS = (IR.delta, IR.gamma, IR.vega, IR.theta, IR.rho)   # typed column refs
+
+position_risk = (
+    PositionView("position_risk", output=PositionRisk)
+    .spine(Position)
+    .source("risk", InstrumentRisk, on=(IR.instrument_type, IR.instrument_id))
+    .add(M.exposure(), *[M.risk_factor(g) for g in GREEKS])  # position_<g> = exposure * <g>
+    .returns()
+)
+
+risk = position_risk(positions, risk=instrument_greeks)   # lazy LazyFrame[PositionRisk]
+```
+
+This is the built-in `schenberg.position.position_risk`. The pure `InstrumentRisk`
+comes from the risk layer (`schenberg.risk.greeks`, the same five Greeks as
+`OptionGreeks`), tagged with `instrument_type` / `instrument_id` / `currency`. A
+short option position (`side = -1`) flips the sign of every position Greek, because
+`side` lives on the `Position`, never in the sensitivity. If you report a
+currency-valued Greek in book currency, add `book` / `fx` sources and a
+`reported_*` measure — the same `/ book_fx` step as `reported_mtm`.
+
+## DV01 — a repricing sensitivity in risk management
+
+Not every risk factor is a closed form. **DV01** (the value change for a +1bp
+parallel rate move) is a *repricing* sensitivity, so it reuses what Schenberg
+already has — a pure pricer that emits `InstrumentValue`, and a `Shock` that bumps
+the curve — rather than re-deriving anything:
+
+```python
+from schenberg.pricing.api import forward_instrument_value
+from schenberg.risk import Dv01Calculator
+
+dv01 = Dv01Calculator.parallel(forward_instrument_value)   # +1bp on curves.risk_free_rate
+sensitivities = dv01.compute(trades, market)               # LazyFrame[InstrumentDv01]
+```
+
+`Dv01Calculator` prices the book at the base and the shocked market and differences
+the two values per instrument; `.parallel(...)` builds the common +1bp curve bump,
+or pass any `Shock`. The result is a pure `InstrumentDv01` — so the position layer
+scales it by exposure with the very same `M.scaled` primitive used for `mtm` and the
+Greeks (a short position flips the sign).
 
 ## Contract rules and derived contractual coordinates
 

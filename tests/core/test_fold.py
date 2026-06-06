@@ -6,7 +6,15 @@ import polars as pl
 import pytest
 from schenberg.core.columns import cols
 from schenberg.core.fold import Fold, count_, lit_, sum_
-from schenberg.domain.schemas.position import InstrumentPrice
+from schenberg.domain.base import SchenbergDataFrameModel
+
+
+class _Priced(SchenbergDataFrameModel):
+    """A tiny local output schema for exercising Fold's schema handling."""
+
+    instrument_type: str
+    instrument_id: str
+    price: float
 
 
 def _component_rows() -> pl.LazyFrame:
@@ -59,22 +67,22 @@ def test_output_schema_field_order_is_respected() -> None:
     fold = (
         Fold("forward_price")
         .by("instrument_id")
-        .returns(InstrumentPrice, instrument_type=lit_("FORWARD"), price=sum_("value"))
+        .returns(_Priced, instrument_type=lit_("FORWARD"), price=sum_("value"))
     )
     out = cast(pl.DataFrame, fold.compute(_component_rows()).collect())
 
-    # InstrumentPrice declares instrument_type, instrument_id, price — in that order.
+    # _Priced declares instrument_type, instrument_id, price — in that order.
     assert out.columns == ["instrument_type", "instrument_id", "price"]
 
 
 def test_returns_rejects_columns_not_in_schema() -> None:
     with pytest.raises(ValueError, match="not in schema"):
-        Fold("f").by("instrument_id").returns(InstrumentPrice, bogus=sum_("value"))
+        Fold("f").by("instrument_id").returns(_Priced, bogus=sum_("value"))
 
 
 def test_returns_requires_aggregation_for_each_non_key_field() -> None:
     with pytest.raises(ValueError, match="missing aggregations"):
-        Fold("f").by("instrument_id").returns(InstrumentPrice, price=sum_("value"))
+        Fold("f").by("instrument_id").returns(_Priced, price=sum_("value"))
 
 
 def test_compute_without_keys_raises() -> None:
@@ -83,11 +91,11 @@ def test_compute_without_keys_raises() -> None:
 
 
 def test_explain_and_info_and_mermaid() -> None:
-    F = cols(InstrumentPrice)
+    F = cols(_Priced)
     fold = (
         Fold("forward_price")
         .by(F.instrument_id)
-        .returns(InstrumentPrice, instrument_type=lit_("FORWARD"), price=sum_("value"))
+        .returns(_Priced, instrument_type=lit_("FORWARD"), price=sum_("value"))
     )
 
     text = fold.explain()
@@ -97,7 +105,7 @@ def test_explain_and_info_and_mermaid() -> None:
 
     info = fold.info()
     assert info["group_keys"] == ["instrument_id"]
-    assert info["schema"] == "InstrumentPrice"
+    assert info["schema"] == "_Priced"
     assert cast(dict, info["aggregations"])["price"] == "sum(value)"
 
     assert "flowchart LR" in fold.to_mermaid()

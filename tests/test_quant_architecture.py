@@ -7,22 +7,26 @@ import pandas as pd
 import polars as pl
 import pytest
 from schenberg.core.columns import ColumnRef, cols
-from schenberg.core.graph import FormulaGraph, uses
+from schenberg.core.graph import Formula, FormulaGraph, uses
 from schenberg.core.router import Router
 from schenberg.domain.schemas.forward import ForwardTrade
 from schenberg.domain.schemas.market_data import (
     DiCurveContract,
     FxRatesContract,
 )
-from schenberg.domain.schemas.position import PricedPosition
 from schenberg.market_data.path import MarketPath
 from schenberg.market_data.shocks import Shock, curve_parallel_shift
 from schenberg.market_data.snapshot import MarketSnapshot
 from schenberg.market_data.sources import MarketSource
-from schenberg.position.functions import (
-    pnl_from_priced_positions,
+from schenberg.pricing.instruments.derivatives.forwards import forward_formula
+from schenberg.pricing.instruments.derivatives.forwards.energy import (
+    energy_forward_formula,
 )
 from schenberg.pricing.market import DI
+
+# Direction (side / pay_receive / long / short / leg_weight) must never enter a
+# pure pricing graph; it lives only in a Structure's exposure or the position layer.
+FORBIDDEN_IN_PRICING = {"side", "pay_receive", "long", "short", "leg_weight"}
 
 
 def test_dataframe_model_ergonomic_constructors() -> None:
@@ -113,37 +117,13 @@ def test_router_fallback_receives_all_rows_with_no_cases() -> None:
     assert cast(pl.DataFrame, out.collect()).select("priced_marker").item() == 1
 
 
-def test_pnl_from_priced_positions_can_be_called_independently() -> None:
-    today = PricedPosition.from_records(
-        [
-            {
-                "position_id": "P",
-                "book": "B",
-                "instrument_type": "FORWARD",
-                "instrument_id": "I",
-                "quantity": 2.0,
-                "side": 1.0,
-                "price": 6.0,
-                "mtm": 12.0,
-            }
-        ]
+@pytest.mark.parametrize("graph", [forward_formula, energy_forward_formula])
+def test_side_never_appears_in_pure_pricing_graphs(graph: Formula) -> None:
+    """A pure pricing graph returns instrument value, not position value: position
+    direction must not be among its inputs or its formula terms."""
+    inner = cast(FormulaGraph, graph._g)
+    term_names = set(inner._indices)
+    assert not (term_names & FORBIDDEN_IN_PRICING), (
+        f"pricing graph {graph.name} leaks direction: {sorted(term_names & FORBIDDEN_IN_PRICING)}"
     )
-    previous = PricedPosition.from_records(
-        [
-            {
-                "position_id": "P",
-                "book": "B",
-                "instrument_type": "FORWARD",
-                "instrument_id": "I",
-                "quantity": 2.0,
-                "side": 1.0,
-                "price": 5.0,
-                "mtm": 10.0,
-            }
-        ]
-    )
-
-    out = pnl_from_priced_positions(today, previous).collect()
-
-    expected_pnl = 2.0
-    assert cast(pl.DataFrame, out).select("mtm_pnl").item() == expected_pnl
+    assert not (graph.required_inputs() & FORBIDDEN_IN_PRICING)
