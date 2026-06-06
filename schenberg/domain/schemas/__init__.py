@@ -12,6 +12,7 @@ from schenberg.domain.schemas.market_data import (
 )
 from schenberg.domain.schemas.position import (
     BookContract,
+    InstrumentDv01,
     InstrumentPnlExplain,
     InstrumentRisk,
     InstrumentValue,
@@ -39,6 +40,7 @@ __all__ = [
     "ForwardTrade",
     "FxRatesContract",
     "BookContract",
+    "InstrumentDv01",
     "InstrumentPnlExplain",
     "InstrumentRisk",
     "InstrumentValue",

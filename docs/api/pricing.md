@@ -12,6 +12,12 @@
 
 ::: schenberg.position.views
 
+## Risk
+
+::: schenberg.risk.dv01
+
+::: schenberg.risk.greeks
+
 ## Forwards
 
 ::: schenberg.pricing.instruments.derivatives.forwards.api

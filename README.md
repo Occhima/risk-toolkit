@@ -93,9 +93,16 @@ A full, runnable version of this is [`examples/01_price_a_swap.py`](examples/01_
 - A **generic forward backbone** (`forward_price - strike → future_value →
   present_value → value`) and an **energy forward** composed from it.
 - A **position layer** (`PositionView`): pure instrument value × position × book
-  context → measures (`exposure`, `position_notional`, `mtm`, `reported_mtm`, and
-  an additive **PnL explain**), declared like pricing formulas and rolled up to
-  books with a `Fold`.
+  context → measures (`exposure`, `position_notional`, `mtm`, `reported_mtm`, an
+  additive **PnL explain**, and **risk factors** — the Greeks lifted by exposure),
+  declared with typed schema columns and rolled up to books with a `Fold`. The
+  built-in pricers emit `InstrumentValue` so they feed it directly; a worked
+  [USD/BRL book valuation notebook](examples/notebooks/usdbrl_book_valuation.py)
+  shows value, PnL and PnL explain end to end.
+- **Risk**: option **Greeks three ways** (closed-form / finite-difference /
+  autograd, that reconcile) and a **`Dv01Calculator`** that reprices under a +1bp
+  `Shock` and differences — both emit pure per-instrument sensitivities the
+  position layer lifts.
 - **Scenarios** via `Shock` (endomorphism on `MarketSnapshot`) and `MarketPath`
   (a lens-lite onto a source/column).
 - A worked **custom-instrument** example (inflation-linked energy forward)

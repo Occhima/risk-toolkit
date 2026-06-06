@@ -42,11 +42,14 @@ from typing import Any, cast
 
 import polars as pl
 
+from schenberg.core.columns import ColumnLike, col_name
 from schenberg.core.graph import FormulaGraph, Term, TermKind, Uses
 
 
-def _keys(on: str | Sequence[str]) -> tuple[str, ...]:
-    return (on,) if isinstance(on, str) else tuple(on)
+def _keys(on: ColumnLike | Sequence[ColumnLike]) -> tuple[str, ...]:
+    if isinstance(on, str) or not isinstance(on, Sequence):
+        return (col_name(cast(ColumnLike, on)),)
+    return tuple(col_name(cast(ColumnLike, k)) for k in on)
 
 
 def _schema_columns(schema: Any) -> set[str]:
@@ -144,7 +147,7 @@ class PositionView:
         name: str,
         schema: Any,
         *,
-        on: str | Sequence[str],
+        on: ColumnLike | Sequence[ColumnLike],
         prefix: str | None = None,
     ) -> PositionView:
         """Join a context source by key(s). Sources join in declaration order, so
@@ -190,9 +193,12 @@ class PositionView:
 
     def measure(self, fn: Callable[..., pl.Expr] | None = None, /, **kwargs: Any) -> Any:
         """Register one measure. Works bare (``@view.measure``) or parameterized
-        (``@view.measure(symbol=...)``); dependencies come from ``uses(...)``
-        defaults over the source namespaces and earlier measures — exactly like a
-        pricing formula. Returns the measure :class:`Term`."""
+        (``@view.measure(name=PV.mtm, symbol=...)``); dependencies come from
+        ``uses(...)`` defaults over the source namespaces and earlier measures —
+        exactly like a pricing formula. ``name`` may be a typed column reference
+        (``cols(PositionValue).mtm``). Returns the measure :class:`Term`."""
+        if "name" in kwargs and kwargs["name"] is not None:
+            kwargs["name"] = col_name(kwargs["name"])
         if fn is None:
             decorator = self._g.formula(**kwargs)
 
@@ -208,7 +214,7 @@ class PositionView:
 
     def derive(
         self,
-        name: str,
+        name: ColumnLike,
         terms: Sequence[Term[Any]],
         fn: Callable[..., pl.Expr],
         **meta: Any,
@@ -216,6 +222,7 @@ class PositionView:
         """Register a measure from an explicit list of dependency terms and a
         reducer ``fn(*exprs)`` — for dynamic-arity measures (e.g. a total that
         sums an arbitrary set of components)."""
+        measure_name = col_name(name)
         params = [
             Parameter(f"_a{i}", Parameter.POSITIONAL_OR_KEYWORD, default=Uses(term))
             for i, term in enumerate(terms)
@@ -225,8 +232,8 @@ class PositionView:
             return fn(*args)
 
         wrapper.__signature__ = Signature(params)  # ty: ignore[unresolved-attribute]
-        wrapper.__name__ = name
-        term = self._g.formula(name=name, **meta)(wrapper)
+        wrapper.__name__ = measure_name
+        term = self._g.formula(name=measure_name, **meta)(wrapper)
         self._measure_names.append(term.name)
         return term
 
@@ -237,9 +244,11 @@ class PositionView:
             measure.register(self)
         return self
 
-    def col(self, name: str) -> Term[Any]:
-        """Resolve a column/measure name to its :class:`Term` — a registered
-        measure, or a joined source column. Used by reusable measures."""
+    def col(self, ref: ColumnLike) -> Term[Any]:
+        """Resolve a typed column/measure reference to its :class:`Term` — a
+        registered measure, or a joined source column. Accepts a schema column
+        (``cols(InstrumentValue).value``), a graph ``Term``, or a plain name."""
+        name = col_name(ref)
         if name in self._g._indices:  # an existing measure (or boundary) term
             return self._g._port_term(name)
         for namespace in self._ns.values():

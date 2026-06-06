@@ -237,20 +237,24 @@ a position-layer concern (`ReportingFx` → `reported_mtm`) and never happens tw
 A `PositionView` lifts *any* pure per-instrument quantity onto a position — not
 just a single `value`. Risk factors (the closed-form Greeks) are a vector of pure
 sensitivities (`InstrumentRisk`), lifted by exposure exactly as `value` becomes
-`mtm`. The one primitive is `scaled(column, by="exposure")` — `mtm` *is*
-`scaled("value")`; a position Greek *is* `scaled("delta")`:
+`mtm`. The one primitive is `scaled(column, by=exposure)` — `mtm` *is*
+`scaled(IV.value)`; a position Greek *is* `scaled(IR.delta)`. Columns are
+referenced by **typed** schema columns (`cols(Schema).column`), never strings, so
+a typo fails at construction:
 
 ```python
+from schenberg.core.columns import cols
 from schenberg.position import measures as M
 from schenberg.position.view import PositionView
 from schenberg.domain.schemas.position import Position, InstrumentRisk, PositionRisk
 
-GREEKS = ("delta", "gamma", "vega", "theta", "rho")
+IR = cols(InstrumentRisk)
+GREEKS = (IR.delta, IR.gamma, IR.vega, IR.theta, IR.rho)   # typed column refs
 
 position_risk = (
     PositionView("position_risk", output=PositionRisk)
     .spine(Position)
-    .source("risk", InstrumentRisk, on=("instrument_type", "instrument_id"))
+    .source("risk", InstrumentRisk, on=(IR.instrument_type, IR.instrument_id))
     .add(M.exposure(), *[M.risk_factor(g) for g in GREEKS])  # position_<g> = exposure * <g>
     .returns()
 )
@@ -265,6 +269,27 @@ short option position (`side = -1`) flips the sign of every position Greek, beca
 `side` lives on the `Position`, never in the sensitivity. If you report a
 currency-valued Greek in book currency, add `book` / `fx` sources and a
 `reported_*` measure — the same `/ book_fx` step as `reported_mtm`.
+
+## DV01 — a repricing sensitivity in risk management
+
+Not every risk factor is a closed form. **DV01** (the value change for a +1bp
+parallel rate move) is a *repricing* sensitivity, so it reuses what Schenberg
+already has — a pure pricer that emits `InstrumentValue`, and a `Shock` that bumps
+the curve — rather than re-deriving anything:
+
+```python
+from schenberg.pricing.api import forward_instrument_value
+from schenberg.risk import Dv01Calculator
+
+dv01 = Dv01Calculator.parallel(forward_instrument_value)   # +1bp on curves.risk_free_rate
+sensitivities = dv01.compute(trades, market)               # LazyFrame[InstrumentDv01]
+```
+
+`Dv01Calculator` prices the book at the base and the shocked market and differences
+the two values per instrument; `.parallel(...)` builds the common +1bp curve bump,
+or pass any `Shock`. The result is a pure `InstrumentDv01` — so the position layer
+scales it by exposure with the very same `M.scaled` primitive used for `mtm` and the
+Greeks (a short position flips the sign).
 
 ## Contract rules and derived contractual coordinates
 

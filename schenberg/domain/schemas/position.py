@@ -75,6 +75,19 @@ class InstrumentRisk(SchenbergDataFrameModel):
     rho: float
 
 
+class InstrumentDv01(SchenbergDataFrameModel):
+    """Pure per-instrument DV01 — the value change for a +1bp parallel rate move.
+
+    A single rate sensitivity (the rates analogue of one of the :class:`InstrumentRisk`
+    Greeks), in the instrument's own currency. The position layer lifts it by
+    exposure exactly as it lifts ``value`` into ``mtm``."""
+
+    instrument_type: str
+    instrument_id: str
+    currency: str = pa.Field(nullable=True)
+    dv01: float
+
+
 # ---- position / book context -------------------------------------------------
 
 
