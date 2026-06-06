@@ -19,7 +19,7 @@ from schenberg.market_data.objects import (
     VolatilitySurface,
     VolQuoteKind,
 )
-from schenberg.market_data.requirements import Key, Keyed
+from schenberg.market_data.roles import market_role
 from schenberg.market_data.snapshot import MarketSnapshot
 from schenberg.market_data.sources import MarketSource
 
@@ -249,17 +249,16 @@ def test_market_snapshot_from_curve_and_vol():
 # ---------------------------------------------------------------------------
 
 
-def test_market_requirements_bind_canonical():
+def test_market_role_binds_from_canonical_source():
     curve = ForwardCurve.from_frame(
         _rate_frame(), name="di_curve", ref_date=REF_DATE, convention=EXPO_CONV
     )
     snapshot = MarketSnapshot.from_sources(as_of=REF_DATE, sources=[curve.to_market_source()])
 
-    spec = Keyed("di_curve", "rate", (Key("tenor", quote_col="tenor", default="tenor"),))
-    req = spec.finalize("rate")
+    role = market_role("rate").read("di_curve", "rate").by(tenor="tenor")
 
     input_lf = pl.DataFrame({"tenor": [TENOR]}).lazy()
-    result = req.attach(input_lf, snapshot).collect()
+    result = role.attach(input_lf, snapshot).collect()
     assert "rate" in result.columns
     assert result["rate"][0] is not None
 

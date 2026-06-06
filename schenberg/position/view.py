@@ -1,16 +1,15 @@
 """PositionView: a lazy, typed view whose columns are position *measures*.
 
 A position computation has the same shape as a :class:`~schenberg.core.graph.Formula`,
-only the boundary is wider. A formula reads one contract frame plus market reads
-attached *before* compilation; a :class:`PositionView` reads a **spine** frame
-(the :class:`~schenberg.domain.schemas.position.Position`) plus **context
-sources** (the pure :class:`InstrumentValue`, the :class:`BookContract`, the
-:class:`ReportingFx`) joined *before* compilation. The measures themselves —
-``exposure``, ``mtm``, ``reported_mtm`` — are pure, row-local ``pl.Expr`` terms in
-an internal :class:`~schenberg.core.graph.FormulaGraph`, so they get
-``explain`` / ``info`` / ``to_mermaid`` / ``stage`` for free and reuse the proven
-formula engine. The only genuinely new machinery is the small, inspectable join
-plan; nothing here calls ``collect``.
+only the boundary is wider. A formula reads one already-bound input frame; a
+:class:`PositionView` reads a **spine** frame (the
+:class:`~schenberg.domain.schemas.position.Position`) plus **context sources** (the
+pure :class:`InstrumentValue`, the :class:`BookContract`, the :class:`ReportingFx`)
+joined *before* compilation. The measures themselves — ``exposure``, ``mtm``,
+``reported_mtm`` — are pure :class:`~schenberg.core.expr.Expr` terms in an internal
+:class:`~schenberg.core.graph.FormulaGraph`, so they get ``explain`` / ``info`` /
+``to_mermaid`` / ``stage`` for free and reuse the proven AST engine. The only
+genuinely new machinery is the small, inspectable join plan; nothing here collects.
 
     position_value = (
         PositionView("position_value", output=PositionValue)
@@ -20,16 +19,10 @@ plan; nothing here calls ``collect``.
         .source("fx", ReportingFx, on=("currency", "reporting_currency"))
     )
 
-    P, V, FX = position_value.position, position_value.value, position_value.fx
+    P, V = position_value.position, position_value.value
 
-    @position_value.measure(symbol="E")
-    def exposure(side=uses(P.side), qty=uses(P.quantity)) -> pl.Expr:
-        return side * qty
-
-    @position_value.measure(symbol="MTM")
-    def mtm(e=uses(exposure), val=uses(V.value)) -> pl.Expr:
-        return e * val
-
+    position_value.let("exposure", P.side * P.quantity, symbol="E")
+    position_value.let("mtm", position_value.col("exposure") * V.value, symbol="MTM")
     position_value.returns()
 """
 
@@ -38,14 +31,14 @@ from __future__ import annotations
 import typing
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from inspect import Parameter, Signature
 from typing import Any, cast
 
 import polars as pl
 
 from schenberg.core.columns import ColumnLike, col_name
+from schenberg.core.expr import Expr, var
 from schenberg.core.fold import Fold, sum_
-from schenberg.core.graph import FormulaGraph, Term, TermKind, Uses
+from schenberg.core.graph import FormulaGraph
 
 
 def _keys(on: ColumnLike | Sequence[ColumnLike]) -> tuple[str, ...]:
@@ -71,12 +64,12 @@ class _Source:
 
 
 class _SourceNamespace:
-    """Attribute access over a source schema, yielding graph INPUT ``Term``\\ s.
+    """Attribute access over a source schema, yielding ``var`` :class:`Expr`\\ s.
 
-    ``position_value.value.value`` resolves to the INPUT term for the joined
-    ``value`` column, validated against ``InstrumentValue`` at authoring time so a
-    typo fails immediately, not at ``collect``. Non-key columns honour a source
-    ``prefix`` (their physical, post-join name)."""
+    ``position_value.value.value`` resolves to a ``var`` for the joined ``value``
+    column, validated against ``InstrumentValue`` at authoring time so a typo fails
+    immediately, not at ``collect``. Non-key columns honour a source ``prefix``
+    (their physical, post-join name)."""
 
     __slots__ = ("_schema", "_names", "_keys", "_prefix")
 
@@ -93,12 +86,12 @@ class _SourceNamespace:
             return f"{self._prefix}{name}"
         return name
 
-    def __getattr__(self, name: str) -> Term[Any]:
+    def __getattr__(self, name: str) -> Expr:
         if name.startswith("_"):
             raise AttributeError(name)
         if name not in self._names:
             raise AttributeError(f"{name!r} is not a declared column in {self._schema.__name__}")
-        return Term(name=self.physical(name), kind=TermKind.INPUT)
+        return var(self.physical(name))
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,19 +102,18 @@ class Measure:
     ``mtm()``, ...) — the position-layer analogue of ``sum_``/``first_`` for a
     :class:`~schenberg.core.fold.Fold`. ``view.add(*measures)`` applies them."""
 
-    register: Callable[[PositionView], Term[Any]]
+    register: Callable[[PositionView], Expr]
 
 
 class PositionView:
     """A declarative, lazy view of ``Position × InstrumentValue × Context``.
 
     Declare the spine and context sources (the join plan), then declare measures
-    the same way pricing formulas are declared — with ``@view.measure`` and
-    ``uses(...)`` over the source namespaces, or with reusable
-    :class:`Measure`\\ s via :meth:`add`. :meth:`compute` interprets the whole
+    with :meth:`let` over the source namespaces and earlier measures, or with
+    reusable :class:`Measure`\\ s via :meth:`add`. :meth:`plan` interprets the whole
     thing as one lazy Polars query; :meth:`stage` exposes every join column and
-    intermediate measure for null-propagation debugging; :meth:`explain`,
-    :meth:`info` and :meth:`to_mermaid` describe it. Nothing collects.
+    intermediate measure; :meth:`explain`, :meth:`info` and :meth:`to_mermaid`
+    describe it. Nothing collects.
     """
 
     def __init__(self, name: str, *, output: Any | None = None) -> None:
@@ -193,50 +185,15 @@ class PositionView:
 
     # ---- declaration: measures -------------------------------------------
 
-    def measure(self, fn: Callable[..., pl.Expr] | None = None, /, **kwargs: Any) -> Any:
-        """Register one measure. Works bare (``@view.measure``) or parameterized
-        (``@view.measure(name=PV.mtm, symbol=...)``); dependencies come from
-        ``uses(...)`` defaults over the source namespaces and earlier measures —
-        exactly like a pricing formula. ``name`` may be a typed column reference
-        (``cols(PositionValue).mtm``). Returns the measure :class:`Term`."""
-        if "name" in kwargs and kwargs["name"] is not None:
-            kwargs["name"] = col_name(kwargs["name"])
-        if fn is None:
-            decorator = self._g.formula(**kwargs)
+    def let(self, name: ColumnLike, expr: Expr | float | int, **meta: Any) -> Expr:
+        """Register one measure ``name = expr`` and return a reference to it.
 
-            def wrapped(real_fn: Callable[..., pl.Expr]) -> Term[Any]:
-                term = decorator(real_fn)
-                self._measure_names.append(term.name)
-                return term
-
-            return wrapped
-        term = self._g.formula()(fn)
-        self._measure_names.append(term.name)
-        return term
-
-    def derive(
-        self,
-        name: ColumnLike,
-        terms: Sequence[Term[Any]],
-        fn: Callable[..., pl.Expr],
-        **meta: Any,
-    ) -> Term[Any]:
-        """Register a measure from an explicit list of dependency terms and a
-        reducer ``fn(*exprs)`` — for dynamic-arity measures (e.g. a total that
-        sums an arbitrary set of components)."""
+        ``expr`` is an :class:`~schenberg.core.expr.Expr` over source columns
+        (``view.position.side``) and earlier measures (``view.col("exposure")``).
+        ``name`` may be a typed column reference (``cols(PositionValue).mtm``)."""
         measure_name = col_name(name)
-        params = [
-            Parameter(f"_a{i}", Parameter.POSITIONAL_OR_KEYWORD, default=Uses(term))
-            for i, term in enumerate(terms)
-        ]
-
-        def wrapper(*args: pl.Expr) -> pl.Expr:
-            return fn(*args)
-
-        wrapper.__signature__ = Signature(params)  # ty: ignore[unresolved-attribute]
-        wrapper.__name__ = measure_name
-        term = self._g.formula(name=measure_name, **meta)(wrapper)
-        self._measure_names.append(term.name)
+        term = self._g.let(measure_name, expr, **meta)
+        self._measure_names.append(measure_name)
         return term
 
     def add(self, *measures: Measure) -> PositionView:
@@ -246,13 +203,13 @@ class PositionView:
             measure.register(self)
         return self
 
-    def col(self, ref: ColumnLike) -> Term[Any]:
-        """Resolve a typed column/measure reference to its :class:`Term` — a
+    def col(self, ref: ColumnLike) -> Expr:
+        """Resolve a typed column/measure reference to its :class:`Expr` — a
         registered measure, or a joined source column. Accepts a schema column
-        (``cols(InstrumentValue).value``), a graph ``Term``, or a plain name."""
+        (``cols(InstrumentValue).value``), a graph ``Expr`` var, or a plain name."""
         name = col_name(ref)
-        if name in self._g._indices:  # an existing measure (or boundary) term
-            return self._g._port_term(name)
+        if name in self._g._terms:  # an existing measure
+            return var(name)
         for namespace in self._ns.values():
             if name in namespace._names:
                 return getattr(namespace, name)
@@ -260,20 +217,7 @@ class PositionView:
 
     def by(self, *keys: ColumnLike) -> Fold:
         """Create a :class:`~schenberg.core.fold.Fold` that groups this view's output
-        by *keys* and sums every numeric measure automatically.
-
-        A concise alternative to writing a :class:`~schenberg.core.fold.Fold` by
-        hand::
-
-            rollup = position_value.by(PV.book)
-            # equivalent to:
-            # Fold("...", input_schema=PositionValue).by(PV.book).returns(
-            #     None, exposure=sum_(PV.exposure), mtm=sum_(PV.mtm), ...
-            # )
-
-        The returned :class:`~schenberg.core.fold.Fold` is lazy and fully
-        inspectable via ``.explain()`` / ``.info()``.
-        """
+        by *keys* and sums every numeric measure automatically."""
         if self._output is None:
             raise ValueError(
                 f"position view {self.name!r} has no output schema; call .returns() first"
@@ -309,9 +253,6 @@ class PositionView:
         if resolved is None:
             raise ValueError(f"position view {self.name!r} has no output schema")
         self._output = resolved
-        for field in _schema_columns(resolved):
-            if field not in self._g._indices:
-                self._g._input_term(field)  # carried-through join column
         self._g.returns("output", resolved)
         return self
 
@@ -323,7 +264,7 @@ class PositionView:
             if src.name not in sources:
                 raise ValueError(
                     f"position view {self.name!r}: missing source {src.name!r}; "
-                    f"pass {src.name}=<frame> to compute(...)"
+                    f"pass {src.name}=<frame> to plan(...)"
                 )
             right = _as_lazy(sources[src.name])
             if src.prefix:
@@ -331,7 +272,7 @@ class PositionView:
             lf = lf.join(right, on=list(src.keys), how="left")
         return lf
 
-    def compute(
+    def plan(
         self,
         spine: pl.LazyFrame | pl.DataFrame,
         *,
@@ -344,7 +285,7 @@ class PositionView:
         its schema at this (public) boundary unless ``validate=False``. Stays
         lazy."""
         joined = self._join(spine, sources)
-        out = self._g.compute(joined, view=view)
+        out = self._g.plan(joined, view=view)
         schema = self._g.view_schema(view)
         if schema is not None:
             out = out.select(list(cast(Any, schema).to_schema().columns.keys()))
@@ -352,15 +293,13 @@ class PositionView:
                 out = cast("pl.LazyFrame", cast(Any, schema).validate(out, lazy=True))
         return out
 
-    __call__ = compute
+    __call__ = plan
 
     def stage(
         self, spine: pl.LazyFrame | pl.DataFrame, **sources: pl.LazyFrame | pl.DataFrame
     ) -> pl.LazyFrame:
         """Debug interpretation: the joined frame (every source column) plus every
-        measure materialized as its own column. Nulls propagate, so a missing
-        instrument value shows up first as a null ``value`` column, with the
-        downstream measures null after it. Stays lazy."""
+        measure materialized as its own column. Stays lazy."""
         joined = self._join(spine, sources)
         return self._g.stage(joined, view="output")
 

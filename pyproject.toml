@@ -45,6 +45,9 @@ dev = [
   "poethepoet>=0.36",
   "marimo>=0.9",
 ]
+jax = [
+    "jax[cpu]>=0.10.1",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["schenberg"]
@@ -63,11 +66,15 @@ src = ["schenberg", "plugins", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "PL"]
-# B008: the Term DSL deliberately puts ``uses(term)`` calls in formula parameter
-# defaults — that default *is* the graph dependency, so the call is by design.
-ignore = ["PLR0913", "B008"]
+ignore = ["PLR0913"]
 
 [tool.ruff.lint.per-file-ignores]
+# expr.py is the IR interpreter: match-based dispatchers legitimately have many
+# returns/branches, precedence levels are bare ints, and the JAX import is an
+# intentionally guarded optional dependency.
+"schenberg/core/expr.py" = ["PLR0911", "PLR0912", "PLR2004", "PLC0415"]
+# tests assert against literal expected values.
+"tests/**/*.py" = ["PLR2004"]
 # marimo notebooks are cell-DAGs of identically-named ``def _`` functions whose
 # last expression is the cell's display value; that idiom is the notebook format,
 # not a smell.

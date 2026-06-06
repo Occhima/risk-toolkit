@@ -4,7 +4,7 @@ from collections.abc import Mapping
 from typing import Any, cast
 
 import polars as pl
-from schenberg.core.graph import FormulaGraph, uses
+from schenberg.core.graph import FormulaGraph
 from schenberg.domain.base import SchenbergDataFrameModel as DataFrameModel
 
 from schenberg_distributed import (
@@ -31,9 +31,7 @@ def test_compute_graph_pricing_collects_formula_outputs() -> None:
     graph = FormulaGraph("test_pricing", input=Trade)
     t = graph.input
 
-    @graph.formula()
-    def value(quantity: pl.Expr = uses(t.quantity), price: pl.Expr = uses(t.price)) -> pl.Expr:
-        return quantity * price
+    graph.let("value", t.quantity * t.price)
 
     trades = pl.DataFrame({"quantity": [2.0, 3.0], "price": [10.0, 7.0]}).lazy()
 

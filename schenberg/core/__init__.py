@@ -1,28 +1,52 @@
-"""The Schenberg engine: terms, formula graphs, routing, folds, market
-dependencies, and diagnostics."""
+"""The Schenberg engine: a symbolic expression IR, AST formula graphs, routing,
+folds, market-join dependencies, and diagnostics."""
 
 from schenberg.core.diagnostics import Diagnostic, DiagnosticReport
+from schenberg.core.expr import (
+    Expr,
+    abs_,
+    compile_numeric,
+    compile_polars,
+    exp,
+    grad,
+    lit,
+    log,
+    sqrt,
+    to_latex,
+    var,
+    where,
+)
 from schenberg.core.fold import Agg, Fold, count_, first_, lit_, sum_
-from schenberg.core.graph import Formula, FormulaGraph, Term, TermKind, uses
-from schenberg.core.market import MarketDependency, MarketRead, MarketRequirement
+from schenberg.core.graph import Formula, FormulaGraph, GraphInfo, TermMeta
+from schenberg.core.market import MarketDependency, MarketRequirement
 from schenberg.core.router import Router
 
 __all__ = [
     "Agg",
     "Diagnostic",
     "DiagnosticReport",
+    "Expr",
     "Fold",
     "Formula",
     "FormulaGraph",
+    "GraphInfo",
     "MarketDependency",
-    "MarketRead",
     "MarketRequirement",
     "Router",
-    "Term",
-    "TermKind",
+    "TermMeta",
+    "abs_",
+    "compile_numeric",
+    "compile_polars",
     "count_",
+    "exp",
     "first_",
+    "grad",
+    "lit",
     "lit_",
+    "log",
+    "sqrt",
     "sum_",
-    "uses",
+    "to_latex",
+    "var",
+    "where",
 ]
