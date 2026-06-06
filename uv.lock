@@ -2012,6 +2012,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "autograd" },
+    { name = "jax" },
     { name = "numpy" },
     { name = "pandas" },
     { name = "pandera", extra = ["polars"] },
@@ -2047,6 +2048,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "autograd", specifier = ">=1.8.0" },
+    { name = "jax", extras = ["cpu"], specifier = ">=0.10.1" },
     { name = "jax", extras = ["cpu"], marker = "extra == 'jax'", specifier = ">=0.10.1" },
     { name = "marimo", marker = "extra == 'dev'", specifier = ">=0.9" },
     { name = "numpy", specifier = ">=2.0" },
