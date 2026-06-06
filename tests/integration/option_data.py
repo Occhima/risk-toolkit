@@ -1,4 +1,4 @@
-"""A near-real option book and market for the end-to-end option pipeline."""
+"""A near-real option book and market for the end-to-end option flow."""
 
 from __future__ import annotations
 

@@ -34,7 +34,10 @@ def price_energy_forward(
     market: MarketSnapshot,
 ) -> LazyFrame[ForwardPricing]:
     """Price energy forward contracts lazily."""
-    return energy_forward_formula.compute(trades, market=market, view="output")
+    return cast(
+        "LazyFrame[ForwardPricing]",
+        energy_forward_formula.compute(trades, market=market, view="output"),
+    )
 
 
 @pa.check_types(lazy=True)

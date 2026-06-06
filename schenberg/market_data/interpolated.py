@@ -56,7 +56,12 @@ class _Grid:
 
 @dataclass(frozen=True, slots=True)
 class InterpolatedBook:
-    """One interpolation grid per group key, built from tidy quotes."""
+    """One interpolation grid per group key, built from tidy quotes.
+
+    ``from_quotes`` may collect a lazy quote source to precompute this grid. That
+    collection is intentionally limited to market data; it does not collect the
+    trade frame that later receives the interpolated value.
+    """
 
     grids: dict[object, _Grid]
 
@@ -112,7 +117,11 @@ class InterpolatedBook:
 
 @dataclass(frozen=True, slots=True)
 class InterpolatedRequirement:
-    """Attachable market data that interpolates a value at each row's coordinates."""
+    """Attachable market data that interpolates a value at each row's coordinates.
+
+    ``attach`` may build an interpolation book from quote data, then returns a
+    lazy trade frame with a Polars expression for row-wise interpolation.
+    """
 
     table: str
     group: tuple[str, str]  # (left/trade column, right/quote column)

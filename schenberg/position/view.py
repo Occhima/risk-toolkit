@@ -10,7 +10,7 @@ sources** (the pure :class:`InstrumentValue`, the :class:`BookContract`, the
 an internal :class:`~schenberg.core.graph.FormulaGraph`, so they get
 ``explain`` / ``info`` / ``to_mermaid`` / ``stage`` for free and reuse the proven
 formula engine. The only genuinely new machinery is the small, inspectable join
-plan; nothing here calls ``.collect()``.
+plan; nothing here calls ``collect``.
 
     position_value = (
         PositionView("position_value", output=PositionValue)
@@ -35,17 +35,16 @@ plan; nothing here calls ``.collect()``.
 
 from __future__ import annotations
 
+import typing
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from inspect import Parameter, Signature
-from typing import TYPE_CHECKING, Any, cast
-
-if TYPE_CHECKING:
-    from schenberg.core.fold import Fold
+from typing import Any, cast
 
 import polars as pl
 
 from schenberg.core.columns import ColumnLike, col_name
+from schenberg.core.fold import Fold, sum_
 from schenberg.core.graph import FormulaGraph, Term, TermKind, Uses
 
 
@@ -76,7 +75,7 @@ class _SourceNamespace:
 
     ``position_value.value.value`` resolves to the INPUT term for the joined
     ``value`` column, validated against ``InstrumentValue`` at authoring time so a
-    typo fails immediately, not at ``collect()``. Non-key columns honour a source
+    typo fails immediately, not at ``collect``. Non-key columns honour a source
     ``prefix`` (their physical, post-join name)."""
 
     __slots__ = ("_schema", "_names", "_keys", "_prefix")
@@ -259,7 +258,7 @@ class PositionView:
                 return getattr(namespace, name)
         raise KeyError(f"position view {self.name!r}: {name!r} is not a measure or a source column")
 
-    def by(self, *keys: ColumnLike) -> "Fold":
+    def by(self, *keys: ColumnLike) -> Fold:
         """Create a :class:`~schenberg.core.fold.Fold` that groups this view's output
         by *keys* and sums every numeric measure automatically.
 
@@ -275,10 +274,6 @@ class PositionView:
         The returned :class:`~schenberg.core.fold.Fold` is lazy and fully
         inspectable via ``.explain()`` / ``.info()``.
         """
-        import typing
-
-        from schenberg.core.fold import Fold, sum_
-
         if self._output is None:
             raise ValueError(
                 f"position view {self.name!r} has no output schema; call .returns() first"

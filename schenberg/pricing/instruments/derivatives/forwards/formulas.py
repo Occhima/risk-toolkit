@@ -28,11 +28,6 @@ def present_value_expr(future_value: pl.Expr, discount_factor: pl.Expr) -> pl.Ex
     return future_value * discount_factor
 
 
-def currency_value_expr(present_value: pl.Expr, currency: pl.Expr) -> pl.Expr:
-    """Convert present value using the contract currency market term."""
-    return present_value * currency
-
-
 def build_forward_formula(
     *,
     name: str,
@@ -77,12 +72,9 @@ def build_forward_formula(
     ) -> pl.Expr:
         return present_value_expr(fv, df)
 
-    @formula.formula(symbol="V", description="Currency-adjusted present value.")
-    def value(
-        pv: pl.Expr = uses(present_value),
-        currency: pl.Expr = uses(m.currency),
-    ) -> pl.Expr:
-        return currency_value_expr(pv, currency)
+    @formula.formula(symbol="V", description="Own-currency present value.")
+    def value(pv: pl.Expr = uses(present_value)) -> pl.Expr:
+        return pv
 
     formula.returns(
         "output",

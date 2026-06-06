@@ -4,7 +4,7 @@ These are the position-layer analogue of ``sum_`` / ``first_`` for a
 :class:`~schenberg.core.fold.Fold`: small, declarative, composable building
 blocks, not a framework. Every column is referenced by a *typed* schema column
 (``cols(Position).side``, ``cols(InstrumentValue).value``) — never a bare string —
-so a typo fails at construction, against the schema, not at ``collect()``. Each
+so a typo fails at construction, against the schema, not at ``collect``. Each
 helper returns a :class:`~schenberg.position.view.Measure` that registers exactly
 one term on a view, resolving its inputs through ``view.col(...)`` so it works
 regardless of how the sources were named.

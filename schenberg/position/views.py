@@ -10,7 +10,7 @@ decomposition (``*_mtm_pnl``), or a vector of risk factors (``position_<greek>``
 
 Every column is referenced by a *typed* schema column — ``cols(InstrumentValue)``,
 ``cols(PositionPnlExplain)`` — so the declarations are checked against the schemas
-at import time, not at ``collect()``.
+at import time, not at ``collect``.
 """
 
 from __future__ import annotations

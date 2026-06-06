@@ -4,7 +4,7 @@ DV01 is a *repricing* sensitivity, not a closed form: it reprices under a shocke
 market and differences the result. So it reuses the machinery already in
 Schenberg — a pure pricer that emits :class:`InstrumentValue`, and a
 :class:`~schenberg.market_data.shocks.Shock` that bumps the rate curve — rather
-than re-deriving anything. Nothing here calls ``.collect()``.
+than re-deriving anything. Nothing here calls ``collect``.
 
     from schenberg.pricing.api import forward_instrument_value
     from schenberg.risk import Dv01Calculator

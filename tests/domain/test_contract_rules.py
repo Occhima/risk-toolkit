@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import ast
 from datetime import date
 from enum import StrEnum
+from pathlib import Path
 
 import pandera.polars as pa
 import polars as pl
@@ -192,9 +194,6 @@ def test_multiple_mixins_compose() -> None:
 
 
 def test_no_collect_in_runtime_files() -> None:
-    import ast
-    from pathlib import Path
-
     root = Path(__file__).parents[2] / "schenberg" / "domain"
     for fname in ("base.py", "rules.py"):
         src = (root / fname).read_text()

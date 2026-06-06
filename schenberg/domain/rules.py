@@ -51,10 +51,7 @@ class ContractRule:
                 cval = getattr(case.value, "value", case.value)
                 chain = chain.when(selector_col == cval).then(case.expr)
 
-            if defaults:
-                computed = chain.otherwise(defaults[0].expr)
-            else:
-                computed = chain.otherwise(None)
+            computed = chain.otherwise(defaults[0].expr) if defaults else chain.otherwise(None)
         else:
             computed = defaults[0].expr
 
@@ -84,7 +81,7 @@ def rule_for(
     return decorator
 
 
-def collect_rules_from_mro(cls: type[Any]) -> tuple[ContractRule, ...]:
+def collect_rules_from_mro(cls: type[Any]) -> tuple[ContractRule, ...]:  # noqa: PLR0912
     """Walk the MRO and compile one ``ContractRule`` per ``(output, selector)`` pair.
 
     More-specific classes override base-class cases for the same

@@ -67,7 +67,7 @@ print(energy_forward_formula.to_mermaid(view="output"))
 | | |
 |---|---|
 | **[Examples](examples/index.md)** | Four runnable scripts: generic forward, energy forward, formula introspection, shock scenario — plus a full custom instrument walkthrough. |
-| **[Concepts](concepts.md)** | Mental model: Term, Formula, MarketSnapshot, Router, Structure, Workflow, Shock. |
+| **[Concepts](concepts.md)** | Mental model: Term, Formula, MarketSnapshot, Router, Fold, Shock. |
 | **[Extending](extending.md)** | Add an instrument, a market dimension, or a convention variant. |
 | **[API Reference](api/index.md)** | Auto-generated from source docstrings. |
 
@@ -76,7 +76,7 @@ print(energy_forward_formula.to_mermaid(view="output"))
 ```
 domain/        Pandera boundary schemas + contract rules     (no deps)
 core/          Term, Formula, FormulaGraph, Router,
-               Structure, Fold, Workflow, Shock              (the engine)
+               Fold, Shock                                  (the engine)
 market_data/   MarketSnapshot, sources, MarketPath, Shock
 pricing/       instruments/derivatives/forwards/…
                (energy forward, generic forward, …)

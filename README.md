@@ -2,23 +2,34 @@
 
 # Schenberg Risk Toolkit
 
-**Composable, lazy pricing for financial instruments — as a graph of formulas.**
+**Small lazy pricing over Polars expressions.**
 
-[Concepts](docs/concepts.md) · [Extending](docs/extending.md) · [Examples](examples/)
+[Concepts](docs/concepts.md) · [Extending](docs/extending.md) · [Examples](docs/examples/)
 
 </div>
 
-Schenberg is a lazy, contract-oriented pricing DSL built on lazy
-[Polars](https://pola.rs) dataframes, [Pandera](https://pandera.readthedocs.io)
-boundary schemas, and a small graph engine (`rustworkx`). Inputs, market reads
-and formulas are **Terms** inside a **FormulaGraph**; the `MarketSnapshot` is the
-environment supplied at compute time. The same declaration can be interpreted as
-lazy Polars, a Mermaid diagram, explanation text, or debug stages, and never
-collects until you ask. A `Router` is a contract-oriented choice among pricing
-graphs; a **Structure** composes pure component pricing with exposure and a
-**Fold** (so position direction lives outside the pricing math); a **Shock** is an
-endomorphism on the market for scenarios; a `Workflow` handles shape-changing
-dataframe stages.
+Schenberg is a compact pricing DSL built on lazy [Polars](https://pola.rs)
+dataframes and typed boundary schemas. Inputs, market reads, and formulas are
+`Term`s inside a `FormulaGraph`; `MarketSnapshot` supplies market sources at
+compute time. Pricing functions return lazy frames and do not execute trade-side
+queries until the caller collects the result.
+
+The implemented public pricing surface is intentionally small:
+
+```python
+from schenberg.pricing.api import (
+    price_forward,
+    forward_instrument_value,
+    price_energy_forward,
+    energy_forward_instrument_value,
+)
+```
+
+Current public pricers cover generic forwards and energy forwards. The position
+layer can then lift own-currency `InstrumentValue` rows onto positions/books and
+apply reporting FX conversion.
+
+## Minimal forward example
 
 ```python
 from datetime import date
@@ -26,139 +37,65 @@ import polars as pl
 
 from schenberg.market_data.snapshot import MarketSnapshot
 from schenberg.market_data.sources import MarketSource
-from schenberg.pricing.api import price_swap
+from schenberg.pricing.api import price_forward
 
 market = MarketSnapshot.from_sources(
-    as_of=date(2026, 6, 3),
+    as_of=date(2026, 6, 5),
     sources=[
-        MarketSource("curves", pl.DataFrame({
-            "id_indexador": [1, 2], "tenor_days": [252, 252],
-            "zero_rate": [0.10, 0.05], "forward_rate": [0.12, None],
-        }).lazy()),
-        MarketSource("fixings", pl.DataFrame({
-            "id_indexador": [2], "fixing_date": [date(2026, 6, 3)], "fixing_value": [100.0],
-        }).lazy()),
-        MarketSource("projected_indexes", pl.DataFrame({
-            "id_indexador": [2], "tenor_days": [252], "projected_index": [106.0],
-        }).lazy()),
+        MarketSource(
+            "curves",
+            pl.DataFrame(
+                {
+                    "id_indexador": ["IDX"],
+                    "tenor_days": [252],
+                    "forward_rate": [110.0],
+                    "risk_free_rate": [0.10],
+                }
+            ).lazy(),
+            unique_by=("id_indexador", "tenor_days"),
+        ),
     ],
 )
 
-# A swap *is* its legs — booked directly as normalized SwapLegInput rows.
-# leg_weight (+1 receive / -1 pay) is position direction: it belongs to the swap
-# Structure's exposure, never to the pure leg-pricing graph.
-_common = {
-    "notional": 1_000_000.0, "payment_days": 252, "accrual": 1.0,
-    "base_date": date(2026, 6, 3), "fixed_rate": None, "cashflow_amount": None,
-}
-legs = pl.DataFrame([
-    {"swap_id": "SWP-1", "leg_id": "ativo", "leg_kind": "CDI",
-     "leg_role": "ativo", "leg_weight": 1.0, "id_indexador": 1, "real_coupon": None, **_common},
-    {"swap_id": "SWP-1", "leg_id": "passivo", "leg_kind": "IPCA",
-     "leg_role": "passivo", "leg_weight": -1.0, "id_indexador": 2, "real_coupon": 0.02, **_common},
-]).lazy()
+trades = pl.DataFrame(
+    {
+        "instrument_id": ["FWD-1"],
+        "tenor": [date(2027, 6, 5)],
+        "indexer": ["IDX"],
+        "currency": ["USD"],
+        "strike": [100.0],
+        "payment_days": [252],
+    }
+).lazy()
 
-price_swap(legs, market).collect()   # -> swap_id, npv, ativo_pv, passivo_pv
+result = price_forward(trades, market)  # LazyFrame
+print(result.collect())
 ```
 
-A full, runnable version of this is [`examples/01_price_a_swap.py`](examples/01_price_a_swap.py).
+## Design rules
 
-## Why a graph
+- Pure pricing graphs compute own-currency instrument values only.
+- Position/book code owns `side`, `quantity`, book metadata, and reporting FX.
+- Market joins are declared as requirements and attached at compute time.
+- Missing graph inputs fail loudly; staged debugging can opt into null columns.
+- Market source key uniqueness can be validated once when the snapshot is built.
+- Interpolation may precompute a quote grid, but trade-side work remains lazy
+  after the interpolation book has been built.
 
-- **Terms, explicitly wired.** A formula names its dependencies with `uses(term)`;
-  the engine handles topological order, cycle checks, and a shared compile cache.
-- **Lazy by construction.** Nothing in the engine calls `.collect()`; a whole
-  pricing run is one Polars query you execute once, at the edge.
-- **Composable.** `merge` / `extend` / `then` compose graphs as open graphs;
-  `Router` is a contract-oriented choice among them; `Structure` + `Fold` compose
-  weighted components; `MarketSnapshot` is the environment that supplies
-  curves/fixings/FX/vol by declarative, lookup-oriented reads.
-- **Direction stays out of the math.** Pure pricing graphs never see
-  `side`/`pay_receive`; weighting and aggregation live in a `Structure`.
-- **Typed at the boundary, fast inside.** Pandera contracts guard the public
-  edges; the hot path stays plain Polars expressions.
-- **One declaration, many interpretations.** `explain`, `info`, `to_mermaid`, and
-  a `stage()` mode that materializes every intermediate for null-propagation
-  debugging — all derived from the same graph, so they can't drift.
+## Included modules
 
-## What's included
+- `schenberg.core`: `FormulaGraph`, `Formula`, `Router`, `Fold`, market
+  dependencies, and diagnostics.
+- `schenberg.market_data`: market snapshots, keyed/interpolated requirements,
+  market source validation, shocks, and market object helpers.
+- `schenberg.pricing.api`: the tested forward and energy-forward public pricers.
+- `schenberg.position`: position views and measures for exposure, MTM, and
+  reporting-currency conversion.
 
-- A reusable **formula DAG core** (`FormulaGraph`), a **Structure**/`Fold` layer
-  for weighted components, and a **stage pipeline** (`Workflow`).
-- **Swap pricing** for CDI, IPCA, and CPI legs — pure leg pricing folded by a swap
-  `Structure` that applies `leg_weight`.
-- **Option pricing** under generalized Black-Scholes-Merton (GENERALIZED and
-  MERTON), priced off an interpolated **volatility surface**, with **Greeks
-  three ways** — closed-form, finite-difference, and autograd — that reconcile.
-- A **generic forward backbone** (`forward_price - strike → future_value →
-  present_value → value`) and an **energy forward** composed from it.
-- A **position layer** (`PositionView`): pure instrument value × position × book
-  context → measures (`exposure`, `position_notional`, `mtm`, `reported_mtm`, an
-  additive **PnL explain**, and **risk factors** — the Greeks lifted by exposure),
-  declared with typed schema columns and rolled up to books with a `Fold`. The
-  built-in pricers emit `InstrumentValue` so they feed it directly; a worked
-  [USD/BRL book valuation notebook](examples/notebooks/usdbrl_book_valuation.py)
-  shows value, PnL and PnL explain end to end.
-- **Risk**: option **Greeks three ways** (closed-form / finite-difference /
-  autograd, that reconcile) and a **`Dv01Calculator`** that reprices under a +1bp
-  `Shock` and differences — both emit pure per-instrument sensitivities the
-  position layer lifts.
-- **Scenarios** via `Shock` (endomorphism on `MarketSnapshot`) and `MarketPath`
-  (a lens-lite onto a source/column).
-- A worked **custom-instrument** example (inflation-linked energy forward)
-  showing how to extend the engine.
-
-## Install & run
+## Install and check
 
 ```bash
-uv sync --all-groups        # install (Python 3.12+)
-uv run pytest               # unit suite
-uv run pytest integration   # integration + performance suite
-just check                  # lint + typecheck + test
+uv sync --all-groups
+uv run pytest
+uv run poe check
 ```
-
-## Documentation
-
-| Doc | What |
-|-----|------|
-| [docs/concepts.md](docs/concepts.md) | The mental model: `Term`, `FormulaGraph`, `Router` as ArrowChoice, `Structure` + `Fold`, `MarketSnapshot` as the Reader environment, `Shock`/`MarketPath`, `Workflow`, and the Router-vs-data rule. |
-| [docs/extending.md](docs/extending.md) | How to add a custom instrument, index, or payoff variant. |
-| [examples/](examples/) | Runnable, self-contained scripts. |
-
-## Project layout
-
-```text
-schenberg/
-  domain/            Pandera boundary schemas + enums
-  core/              Term, FormulaGraph, Router, Structure, Fold, MarketRead, Workflow, diagnostics
-  market_data/       MarketSnapshot, sources, curve specs, MarketPath, Shock, calendar
-  pricing/
-    api.py           public pricing facade
-    instruments/     swap (legs + structure), forward (generic/energy), option
-    structured.py    structured products as weighted sums of components
-  position/          PositionView, reusable measures, built-in value/PnL views
-  math/              shared Polars expressions
-docs/                concepts + extension guides
-examples/            runnable scripts, incl. a custom-instrument package
-integration/         end-to-end pipeline + performance tests
-containers/          container images (dev image; future CLI image)
-plugins/             uv workspace extensions (e.g. schenberg_distributed)
-tests/               unit suite + fixtures
-```
-
-## Workspace plugins
-
-This repo is a `uv` workspace. Extensions live under `plugins/`. The first,
-`schenberg_distributed`, centralizes pricing materialization in execution
-contexts (`local` / `ray` / `custom`):
-
-```python
-from schenberg_distributed import PricingExecutionContext, collect_pricing
-
-context = PricingExecutionContext.ray(engine="streaming")
-result = collect_pricing(lazy_pricing_frame, context=context)
-```
-
-## License
-
-MIT.

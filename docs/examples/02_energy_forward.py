@@ -8,8 +8,6 @@ adds *where the numbers come from*:
 
 - ``forward_price`` is looked up on the energy curve by ``(submarket, delivery_period)``.
 - ``risk_free`` is discounted from the DI curve keyed by ``(indexer, payment_days)``.
-- ``currency`` is the FX rate from ``fx_rates`` keyed by ``currency``.
-
 The formula graph never mentions "energy" — the specialisation lives entirely in
 ``EnergyForwardMarket`` (the market requirements) and in the ``EnergyForwardPricing``
 contract which overrides the PLD fixing-date rule.
@@ -22,15 +20,19 @@ override it by supplying the column explicitly.
 from __future__ import annotations
 
 from datetime import date
+from typing import cast
 
 import polars as pl
-
+from pandera.typing.polars import LazyFrame
 from schenberg.market_data.snapshot import MarketSnapshot
 from schenberg.market_data.sources import MarketSource
-from schenberg.pricing.instruments.derivatives.forwards.energy import price_energy_forward
+from schenberg.pricing.instruments.derivatives.forwards.energy import (
+    EnergyForwardPricing,
+    price_energy_forward,
+)
 
 # ---------------------------------------------------------------------------
-# Market: energy curve + discount curve + FX
+# Market: energy curve + discount curve
 # ---------------------------------------------------------------------------
 market = MarketSnapshot.from_sources(
     as_of=date(2026, 6, 5),
@@ -45,6 +47,7 @@ market = MarketSnapshot.from_sources(
                     "forward_price": [270.0, 260.0, 245.0],
                 }
             ).lazy(),
+            unique_by=("submarket", "delivery_period"),
         ),
         # Discount curve keyed by (id_indexador, tenor_days)
         MarketSource(
@@ -56,10 +59,7 @@ market = MarketSnapshot.from_sources(
                     "risk_free_rate": [0.10, 0.10],
                 }
             ).lazy(),
-        ),
-        MarketSource(
-            "fx_rates",
-            pl.DataFrame({"currency": ["BRL"], "fx_rate": [1.0]}).lazy(),
+            unique_by=("id_indexador", "tenor_days"),
         ),
     ],
 )
@@ -70,23 +70,26 @@ market = MarketSnapshot.from_sources(
 # index_fixing_date is intentionally omitted. The PLD rule fills it as the
 # 6th business day of the month following tenor (e.g. 2026-07-xx).
 # ---------------------------------------------------------------------------
-trades = pl.DataFrame(
-    {
-        "instrument_id": ["ENG-1", "ENG-1", "ENG-2"],
-        "tenor": [date(2026, 7, 1), date(2026, 8, 1), date(2026, 7, 1)],
-        "indexer": ["PLD", "PLD", "PLD"],
-        "currency": ["BRL", "BRL", "BRL"],
-        "strike": [250.0, 250.0, 230.0],
-        "payment_days": [252, 252, 252],
-        "submarket": ["SE", "SE", "NE"],
-        "incentive": ["I0", "I0", "I0"],
-        "delivery_period": ["2026-07", "2026-08", "2026-07"],
-    }
-).lazy()
+trades = cast(
+    LazyFrame[EnergyForwardPricing],
+    pl.DataFrame(
+        {
+            "instrument_id": ["ENG-1", "ENG-1", "ENG-2"],
+            "tenor": [date(2026, 7, 1), date(2026, 8, 1), date(2026, 7, 1)],
+            "indexer": ["PLD", "PLD", "PLD"],
+            "currency": ["BRL", "BRL", "BRL"],
+            "strike": [250.0, 250.0, 230.0],
+            "payment_days": [252, 252, 252],
+            "submarket": ["SE", "SE", "NE"],
+            "incentive": ["I0", "I0", "I0"],
+            "delivery_period": ["2026-07", "2026-08", "2026-07"],
+        }
+    ).lazy(),
+)
 
 result = price_energy_forward(trades, market)
 print(
-    result.collect().select(
+    cast(pl.DataFrame, result.collect()).select(
         "instrument_id",
         "submarket",
         "delivery_period",

@@ -29,7 +29,7 @@ class Compounding:
     """Lazy conversion between rates and capitalization factors.
 
     Stateless. All methods return Polars expressions and never call
-    ``.collect()``. ``DISCOUNT_FACTOR`` and ``UNIT_PRICE`` are passthrough
+    ``collect``. ``DISCOUNT_FACTOR`` and ``UNIT_PRICE`` are passthrough
     quote kinds: ``factor_expr`` and ``rate_expr`` return the input column
     unchanged so existing factors / unit prices are not recomputed.
     """

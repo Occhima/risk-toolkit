@@ -6,7 +6,6 @@ from schenberg.pricing.instruments.derivatives.forwards.energy.contracts import 
     EnergyForwardPricing,
 )
 from schenberg.pricing.market import CURVES, ENERGY_FWD
-from schenberg.pricing.market import FX as CURRENCY
 
 
 class EnergyForwardMarket(MarketRequirements[EnergyForwardPricing]):
@@ -16,9 +15,7 @@ class EnergyForwardMarket(MarketRequirements[EnergyForwardPricing]):
 
         m.forward_price
         m.risk_free
-        m.currency
     """
 
     forward_price: Term[float] = requires(ENERGY_FWD.price())
     risk_free: Term[float] = requires(CURVES.risk_free_rate().by(indexer=contract.indexer))
-    currency: Term[float] = requires(CURRENCY.rate())

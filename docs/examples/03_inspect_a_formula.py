@@ -4,7 +4,7 @@ Run with:  uv run python docs/examples/03_inspect_a_formula.py
 
 The same declaration that computes prices also explains itself: required inputs,
 market reads, formula nodes, output columns, a Mermaid flowchart, and a
-dependency trace. None of this ever calls ``.collect()`` — the graph is a
+dependency trace. None of this ever calls ``collect`` — the graph is a
 program you can read before running.
 
 This is the key property of the declarative DSL: every piece of pricing logic
