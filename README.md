@@ -92,7 +92,10 @@ A full, runnable version of this is [`examples/01_price_a_swap.py`](examples/01_
   three ways** — closed-form, finite-difference, and autograd — that reconcile.
 - A **generic forward backbone** (`forward_price - strike → future_value →
   present_value → value`) and an **energy forward** composed from it.
-- **Portfolio** value, PnL, and DV01 helpers.
+- A **position layer** (`PositionView`): pure instrument value × position × book
+  context → measures (`exposure`, `position_notional`, `mtm`, `reported_mtm`, and
+  an additive **PnL explain**), declared like pricing formulas and rolled up to
+  books with a `Fold`.
 - **Scenarios** via `Shock` (endomorphism on `MarketSnapshot`) and `MarketPath`
   (a lens-lite onto a source/column).
 - A worked **custom-instrument** example (inflation-linked energy forward)
@@ -125,7 +128,8 @@ schenberg/
   pricing/
     api.py           public pricing facade
     instruments/     swap (legs + structure), forward (generic/energy), option
-    portfolio.py     value / PnL / DV01 helpers
+    structured.py    structured products as weighted sums of components
+  position/          PositionView, reusable measures, built-in value/PnL views
   math/              shared Polars expressions
 docs/                concepts + extension guides
 examples/            runnable scripts, incl. a custom-instrument package

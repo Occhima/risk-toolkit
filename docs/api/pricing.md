@@ -4,9 +4,13 @@
 
 ::: schenberg.pricing.api
 
-## Portfolio
+## Position layer
 
-::: schenberg.position.functions
+::: schenberg.position.view
+
+::: schenberg.position.measures
+
+::: schenberg.position.views
 
 ## Forwards
 

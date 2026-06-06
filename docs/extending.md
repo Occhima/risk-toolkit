@@ -148,12 +148,15 @@ normally, then combine with `price_structures`:
 
 ```python
 from schenberg.pricing.structured import price_structures
-from schenberg.position.functions import with_prices
+from schenberg.position import position_value
 
 atomic_prices = pl.concat([forward_prices, swap_prices], how="diagonal_relaxed")
 structure_prices = price_structures(structure_legs, atomic_prices)
 all_prices = pl.concat([atomic_prices, structure_prices], how="diagonal_relaxed")
-priced_positions = with_prices(positions, all_prices)
+
+# lift the pure prices to InstrumentValue, then value the positions
+values = all_prices.rename({"price": "value"}).with_columns(currency=pl.lit("BRL"))
+valued = position_value(positions, value=values, book=book, fx=fx)
 ```
 
 `structure_legs` is a `StructureLeg` frame with columns
@@ -161,6 +164,54 @@ priced_positions = with_prices(positions, all_prices)
 quantity, side`.  The output of `price_structures` has the same shape as
 any other `InstrumentPrice` frame (`instrument_type, instrument_id, price`)
 with `instrument_type = "STRUCTURE"`.
+
+## Value a position — the position layer
+
+Pricing returns a **pure** `InstrumentValue` (`value`, no `side`). Turning that
+into *how much a position is worth* is a separate, declarative layer: a
+`PositionView` joins the position spine, the instrument value, and the
+book/reporting context, and exposes the measures (`exposure`, `position_notional`,
+`mtm`, `reported_mtm`) by name — the same way a pricer exposes formulas.
+
+```python
+import polars as pl
+from schenberg.core.graph import uses
+from schenberg.position.view import PositionView
+from schenberg.domain.schemas.position import (
+    Position, InstrumentValue, BookContract, ReportingFx, PositionValue,
+)
+
+view = (
+    PositionView("position_value", output=PositionValue)
+    .spine(Position)
+    .source("value", InstrumentValue, on=("instrument_type", "instrument_id"))
+    .source("book", BookContract, on="book")
+    .source("fx", ReportingFx, on=("currency", "reporting_currency"))
+)
+P, V, FX = view.position, view.value, view.fx
+
+@view.measure(symbol="E")
+def exposure(side=uses(P.side), qty=uses(P.quantity)) -> pl.Expr:
+    return side * qty            # direction enters HERE, never in pricing
+
+@view.measure(symbol="MTM")
+def mtm(e=uses(exposure), val=uses(V.value)) -> pl.Expr:
+    return e * val
+
+@view.measure
+def reported_mtm(m=uses(mtm), rate=uses(FX.book_fx)) -> pl.Expr:
+    return m / rate              # reporting currency is a measure, not pricing
+
+view.returns()
+valued = view(positions, value=prices, book=book, fx=fx)   # lazy LazyFrame[PositionValue]
+```
+
+The common measures also come from a small stdlib, so the whole declaration can
+read as data — `view.add(M.exposure(), M.mtm(), M.reported_mtm())`. The built-in
+`schenberg.position.position_value` and `schenberg.position.position_pnl_explain`
+are exactly such declarations; `view.explain()` / `.to_mermaid()` / `.stage(...)`
+describe and debug them, and book/portfolio roll-up is a *later* layer — a `Fold`
+(`schenberg.position.book_value_rollup`), never part of the view.
 
 ## Contract rules and derived contractual coordinates
 

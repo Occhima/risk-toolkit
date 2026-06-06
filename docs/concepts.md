@@ -228,6 +228,34 @@ inspectable — `explain()` renders `npv = sum(weighted_pv)` rather than an opaq
 expression. The same `Fold` powers both structured instruments (via `Structure`)
 and portfolio/book roll-ups.
 
+## 7b. PositionView: measures over a position
+
+Pricing answers *what is one unit worth?* and returns a **pure** `InstrumentValue`
+(no `side`, no position). The position layer answers *how much do I hold, and what
+is that worth in my book's terms?*. A `PositionView` has the same shape as a
+`Formula`, only the boundary is wider: a **spine** frame (the `Position`) plus
+**context sources** (the `InstrumentValue`, the `BookContract`, the `ReportingFx`)
+joined *before* compilation, then pure row-local **measures** — `exposure`, `mtm`,
+`reported_mtm` — declared exactly like pricing formulas.
+
+```python
+P, V, FX = position_value.position, position_value.value, position_value.fx
+
+@position_value.measure(symbol="MTM")
+def mtm(e=uses(exposure), val=uses(V.value)) -> pl.Expr:
+    return e * val            # exposure carries the direction; pricing never does
+```
+
+Because the measures are terms in an internal `FormulaGraph`, the view gets
+`explain()` / `info()` / `to_mermaid()` / `stage()` for free, and stays lazy.
+`side` / `quantity` live on the `Position` and enter only here. Reporting currency
+is a *measure* (`mtm / book_fx`), not a pricing concern. **PnL explain** is a
+second view of the same shape (`position_pnl_explain`): each component is
+`exposure * <component>_value_pnl / book_fx`, and the total is their sum — PnL is a
+*derived measure*, never the definition of a position. **Book/portfolio roll-up is
+a later layer**: a `Fold` over the view's output (`book_value_rollup`), so a
+position is never confused with an aggregate.
+
 ## 8. Shock and MarketPath
 
 A `Shock` is an **endomorphism** `MarketSnapshot → MarketSnapshot`: it returns a

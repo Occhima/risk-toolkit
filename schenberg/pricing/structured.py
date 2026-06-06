@@ -34,8 +34,8 @@ def price_structures(
 
     Each leg's contribution is ``side * quantity * price``; contributions are
     summed per ``structure_id`` with a :class:`Fold`. The result has the same shape
-    as any other ``InstrumentPrice`` frame and can be passed to ``with_prices``
-    directly.
+    as any other ``InstrumentPrice`` frame; lift it to an ``InstrumentValue`` to
+    feed the position layer's ``position_value`` view.
     """
     contributions = (
         structure_legs.join(

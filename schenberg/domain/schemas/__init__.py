@@ -10,7 +10,16 @@ from schenberg.domain.schemas.market_data import (
     FixingContract,
     FxRatesContract,
 )
-from schenberg.domain.schemas.position import InstrumentPrice, Position, PricedPosition
+from schenberg.domain.schemas.position import (
+    BookContract,
+    InstrumentPnlExplain,
+    InstrumentPrice,
+    InstrumentValue,
+    Position,
+    PositionPnlExplain,
+    PositionValue,
+    ReportingFx,
+)
 from schenberg.domain.schemas.structure import StructureLeg
 from schenberg.domain.schemas.swap import (
     LegPricing,
@@ -28,10 +37,15 @@ __all__ = [
     "ForwardPricing",
     "ForwardTrade",
     "FxRatesContract",
+    "BookContract",
+    "InstrumentPnlExplain",
     "InstrumentPrice",
+    "InstrumentValue",
     "LegPricing",
     "Position",
-    "PricedPosition",
+    "PositionPnlExplain",
+    "PositionValue",
+    "ReportingFx",
     "StructureLeg",
     "SwapLegInput",
     "SwapLegStage",
