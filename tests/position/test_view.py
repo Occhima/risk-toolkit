@@ -10,6 +10,8 @@ import pytest
 import schenberg.position.measures as measures_mod
 import schenberg.position.view as view_mod
 import schenberg.position.views as views_mod
+from schenberg.core.columns import cols
+from schenberg.core.fold import Fold
 from schenberg.core.graph import uses
 from schenberg.domain.schemas.position import (
     BookContract,
@@ -29,6 +31,8 @@ from schenberg.position import (
     position_value,
 )
 from schenberg.position.view import PositionView
+
+PV = cols(PositionValue)
 
 # ---- fixtures ----------------------------------------------------------------
 
@@ -437,3 +441,89 @@ def test_book_rollup_sums_positions_into_books() -> None:
     assert rolled.filter(pl.col("book") == "B1").select("reported_mtm").item() == pytest.approx(
         1000.0 - 200.0
     )
+
+
+# ---- by(): aggregation shorthand on PositionView -----------------------------
+
+
+def test_by_returns_a_fold() -> None:
+    rollup = position_value.by(PV.book)
+    assert isinstance(rollup, Fold)
+
+
+def test_by_fold_groups_and_sums_numeric_measures() -> None:
+    valued = position_value(_positions(), value=_values(), book=_book(), fx=_fx())
+    rolled = _collect(position_value.by(PV.book).compute(valued))
+    assert rolled.height == 1
+    # P1: reported_mtm = 200/0.2 = 1000; P2: reported_mtm = -200/1.0 = -200
+    assert rolled.select("reported_mtm").item() == pytest.approx(1000.0 - 200.0)
+    assert rolled.select("mtm").item() == pytest.approx(200.0 - 200.0)
+    assert rolled.select("exposure").item() == pytest.approx(100.0 - 50.0)
+
+
+def test_by_fold_is_lazy() -> None:
+    valued = position_value(_positions(), value=_values(), book=_book(), fx=_fx())
+    out = position_value.by(PV.book).compute(valued)
+    assert isinstance(out, pl.LazyFrame)
+
+
+def test_by_fold_is_inspectable() -> None:
+    rollup = position_value.by(PV.book)
+    info = rollup.info()
+    assert info["group_keys"] == ["book"]
+    assert "mtm" in info["aggregations"]
+    assert "reported_mtm" in info["aggregations"]
+    # non-numeric columns (position_id) must not appear as aggregations
+    assert "position_id" not in info["aggregations"]
+
+
+def test_by_explain_names_the_fold() -> None:
+    text = position_value.by(PV.book).explain()
+    assert "position_value_by_book" in text
+    assert "book" in text
+
+
+def test_by_multiple_keys() -> None:
+    # two positions in different books
+    positions = Position.from_records(
+        [
+            {
+                "position_id": "P1",
+                "book": "B1",
+                "instrument_type": "FORWARD",
+                "instrument_id": "ENG-1",
+                "quantity": 100.0,
+                "side": 1.0,
+                "unit_notional": None,
+            },
+            {
+                "position_id": "P2",
+                "book": "B2",
+                "instrument_type": "FORWARD",
+                "instrument_id": "ENG-1",
+                "quantity": 50.0,
+                "side": 1.0,
+                "unit_notional": None,
+            },
+        ]
+    )
+    book2 = BookContract.from_records(
+        [
+            {"book": "B1", "desk": "Energy", "legal_entity": "LE-1", "reporting_currency": "BRL"},
+            {"book": "B2", "desk": "Energy", "legal_entity": "LE-2", "reporting_currency": "BRL"},
+        ]
+    )
+    valued = position_value(positions, value=_values(), book=book2, fx=_fx())
+    rolled = _collect(position_value.by(PV.book).compute(valued))
+    assert rolled.height == 2
+
+
+def test_by_unknown_key_raises() -> None:
+    with pytest.raises(ValueError, match="not columns of PositionValue"):
+        position_value.by("nonexistent_col")
+
+
+def test_by_before_returns_raises() -> None:
+    view = PositionView("no_schema")
+    with pytest.raises(ValueError, match="no output schema"):
+        view.by("book")

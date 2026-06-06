@@ -38,7 +38,10 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from inspect import Parameter, Signature
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
+
+if TYPE_CHECKING:
+    from schenberg.core.fold import Fold
 
 import polars as pl
 
@@ -255,6 +258,53 @@ class PositionView:
             if name in namespace._names:
                 return getattr(namespace, name)
         raise KeyError(f"position view {self.name!r}: {name!r} is not a measure or a source column")
+
+    def by(self, *keys: ColumnLike) -> "Fold":
+        """Create a :class:`~schenberg.core.fold.Fold` that groups this view's output
+        by *keys* and sums every numeric measure automatically.
+
+        A concise alternative to writing a :class:`~schenberg.core.fold.Fold` by
+        hand::
+
+            rollup = position_value.by(PV.book)
+            # equivalent to:
+            # Fold("...", input_schema=PositionValue).by(PV.book).returns(
+            #     None, exposure=sum_(PV.exposure), mtm=sum_(PV.mtm), ...
+            # )
+
+        The returned :class:`~schenberg.core.fold.Fold` is lazy and fully
+        inspectable via ``.explain()`` / ``.info()``.
+        """
+        import typing
+
+        from schenberg.core.fold import Fold, sum_
+
+        if self._output is None:
+            raise ValueError(
+                f"position view {self.name!r} has no output schema; call .returns() first"
+            )
+
+        key_names = {col_name(k) for k in keys}
+        fields = _schema_columns(self._output)
+
+        unknown = key_names - fields
+        if unknown:
+            raise ValueError(
+                f"position view {self.name!r}: by() key(s) {sorted(unknown)} "
+                f"are not columns of {self._output.__name__}"
+            )
+
+        hints = typing.get_type_hints(self._output)
+        aggs = {
+            name: sum_(name)
+            for name in fields
+            if name not in key_names and hints.get(name) in (float, int)
+        }
+
+        key_label = "_".join(col_name(k) for k in keys)
+        fold_name = f"{self.name}_by_{key_label}"
+
+        return Fold(fold_name, input_schema=self._output).by(*keys).returns(None, **aggs)
 
     def returns(self, schema: Any | None = None) -> PositionView:
         """Publish the typed output view. Each field is satisfied *by name* — a
