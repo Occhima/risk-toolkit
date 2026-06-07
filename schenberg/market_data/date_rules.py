@@ -128,3 +128,16 @@ def nth_business_day_next_month(anchor: str, *, n: int, output_col: str | None =
     period = pl.col(anchor).dt.strftime("%Y-%m")
     expr = nth_business_day_of_following_month(period, n=n)
     return expr if output_col is None else expr.alias(output_col)
+
+
+def previous_business_days(anchor: str, *, n: int, output_col: str | None = None) -> pl.Expr:
+    """The ``n``-th business day before the anchor date (Mon–Fri only).
+
+    ``n=1`` means the previous business day. This deliberately uses Polars'
+    built-in weekday calendar and no national holiday calendar; callers that need
+    exchange-specific calendars can pass a precomputed fixing date column instead.
+    """
+    if n < 1:
+        raise ValueError(f"n must be >= 1, got {n}")
+    expr = pl.col(anchor).dt.add_business_days(-n, roll="forward")
+    return expr if output_col is None else expr.alias(output_col)

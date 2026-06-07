@@ -68,16 +68,12 @@ nav:
   - Home: index.md
   - Concepts: concepts.md
   - Examples:
-      - examples/index.md
-      - 01 — Generic forward: examples/01_price_a_forward.md
-      - 02 — Energy forward: examples/02_energy_forward.md
-      - 03 — Inspect a formula: examples/03_inspect_a_formula.md
-      - 04 — Shock scenario: examples/04_shock_scenario.md
-      - Custom instrument: examples/custom_instrument/index.md
+      - Forward pricer: examples/01_forward_pricer.html
+      - Forward positions: examples/02_forward_positions.html
+      - USD/BRL DF fixing: examples/03_usdbrl_df_fixing.html
   - Extending: extending.md
   - API Reference:
       - api/index.md
       - Core Engine: api/core.md
       - Market Data: api/market-data.md
-      - Pricing: api/pricing.md
       - Domain: api/domain.md

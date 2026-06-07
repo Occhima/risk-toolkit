@@ -8,21 +8,13 @@
 
 ::: schenberg.market_data.sources.MarketSource
 
-## Market requirements (the requirements DSL)
+## Roles and fixing
 
-::: schenberg.market_data.requirements
+::: schenberg.market_data.roles
 
-## Market source registry
+## Date rules
 
-::: schenberg.pricing.market
-
-## ANBIMA calendar
-
-::: schenberg.market_data.calendar.anbima
-
-## Business days
-
-::: schenberg.market_data.calendar.business_days
+::: schenberg.market_data.date_rules
 
 ## MarketPath
 
