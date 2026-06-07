@@ -54,7 +54,6 @@ def test_duplicate_input_or_node_fails() -> None:
             return x
 
 
-
 def test_missing_dependency_fails() -> None:
     plan = ValuationPlan("p")
     with pytest.raises(ValueError, match="missing dependency"):
@@ -62,7 +61,6 @@ def test_missing_dependency_fails() -> None:
         @plan.node("y", x="x")
         def y(x: int) -> int:
             return x
-
 
 
 def test_topological_order_with_rustworkx() -> None:

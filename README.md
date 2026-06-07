@@ -43,16 +43,16 @@ class ForwardInput(With[ForwardRate], With[RiskFreeRate], SchenbergDataFrameMode
 g = FormulaGraph("forward", input=ForwardInput)
 
 @g.formula(symbol="T")
-def year_fraction(c):
-    return c.payment_days / 252.0
+def year_fraction(payment_days):
+    return payment_days / 252.0
 
 @g.formula(symbol="DF")
-def discount_factor(c, year_fraction):
-    return exp(-c.risk_free_rate * year_fraction)
+def discount_factor(risk_free_rate, year_fraction):
+    return exp(-risk_free_rate * year_fraction)
 
 @g.formula(symbol="FV")
-def future_value(c):
-    return c.forward_rate - c.strike
+def future_value(forward_rate, strike):
+    return forward_rate - strike
 
 @g.formula(symbol="PV")
 def present_value(future_value, discount_factor):
@@ -102,9 +102,14 @@ print(result.collect())
 
 `@g.formula(...)` is the ergonomic API for registering terms. The default term
 name is the Python function name; `name=`, `symbol=`, `description=`, `tags=` and
-`dtype=` are supported. Dependencies are inferred from the function signature:
-`c`, `contract`, `input` and `inputs` receive the graph input namespace, and any
-parameter named after an earlier term receives that symbolic term.
+`dtype=` are supported. Dependencies are declared as **headless parameters**:
+each argument name is resolved to a symbolic `var` — from an earlier term first,
+otherwise from the graph's input schema (contract *and* pre-resolved market
+columns alike). So a formula reads like the math it represents — `def
+present_value(future_value, discount_factor): ...` — with no `c.`/`contract.`
+indirection. With an input schema declared, an unknown parameter fails fast at
+definition time. The legacy namespace names `c`, `contract`, `input` and
+`inputs` still receive the whole input namespace for backward compatibility.
 
 The decorated function returns Schenberg `Expr` nodes, not opaque Python UDFs, so
 introspection and compilation still work:
@@ -138,15 +143,28 @@ rollup = book_value_rollup.compute(pv)
 - Missing inputs fail loudly at plan time.
 - Examples define their pricers locally with the public API; Schenberg does not
   centralise those example pricers in a pricing API module.
-- HTML examples are exported directly with `marimo export html`.
+- Example notebooks are Quarto `.qmd` files rendered with `quarto render`.
 
-## Interactive examples
+## Example notebooks (Quarto)
+
+The examples are [Quarto](https://quarto.org/) notebooks that render to
+standalone HTML, leaning on Quarto's native LaTeX (MathJax) and Mermaid so the
+graph's own `to_latex()` / `to_mermaid()` output renders as real math and
+diagrams:
+
+| Notebook | Shows |
+|---|---|
+| `01_forward_pricer.qmd` | A formula graph from scratch — headless params, semantic roles, lazy plan |
+| `02_vanilla_option.qmd` | Black-Scholes price & Greeks, then the same graph swept over a spot ladder |
+| `03_autodiff_greeks.qmd` | One `Expr` → Polars + JAX + LaTeX; autodiff **vanna & volga** reconciled vs finite differences |
+| `04_scenario_var.qmd` | Shocks, named stresses, and a historical **VaR/ES** via `reprice_under` |
+| `05_quantlib_benchmark.qmd` | Price/delta reconciled against **QuantLib**, plus vectorized throughput |
+
+Render them all to HTML (needs the [Quarto CLI](https://quarto.org/docs/get-started/)):
 
 ```bash
-uv run marimo edit docs/examples/01_forward_pricer.py
-uv run marimo edit docs/examples/02_forward_positions.py
-uv run marimo edit docs/examples/03_usdbrl_df_fixing.py
-uv run poe examples-html
+uv run poe examples-html      # render docs/examples/*.qmd -> *.html
+uv run poe examples-preview   # live preview while editing
 ```
 
 ## Install and check
@@ -188,5 +206,6 @@ enriched = bind(trades, market, VanillaOptionInput)
 priced = option_graph.plan(enriched, view="output")  # LazyFrame
 ```
 
-See `docs/examples/04_vanilla_option.py` for Black-Scholes price/Greeks and
-`docs/examples/05_option_pnl_explain.py` for a small lazy repricing PnL explain.
+See `docs/examples/02_vanilla_option.qmd` for Black-Scholes price/Greeks and
+`docs/examples/03_autodiff_greeks.qmd` for autodiff vanna/volga rendered from the
+same symbolic formula.

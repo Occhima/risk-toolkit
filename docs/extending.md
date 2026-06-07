@@ -30,16 +30,16 @@ class MyInput(With[MyRate], SchenbergDataFrameModel):
 g = FormulaGraph("my_pricer", input=MyInput)
 
 @g.formula(symbol="T")
-def year_fraction(c):
-    return c.payment_days / 252.0
+def year_fraction(payment_days):
+    return payment_days / 252.0
 
 @g.formula(symbol="DF")
-def discount_factor(c, year_fraction):
-    return exp(-c.my_rate * year_fraction)
+def discount_factor(my_rate, year_fraction):
+    return exp(-my_rate * year_fraction)
 
 @g.formula(symbol="FV")
-def future_value(c):
-    return c.my_rate - c.strike
+def future_value(my_rate, strike):
+    return my_rate - strike
 
 @g.formula(symbol="PV")
 def present_value(future_value, discount_factor):

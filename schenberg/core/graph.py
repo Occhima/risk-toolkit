@@ -86,15 +86,29 @@ class FormulaGraph:
     """The pure, typed, AST-based pricing engine.
 
         g = FormulaGraph("forward", input=ForwardPricingInput)
-        c = g.input
-        T = g.let("year_fraction", c.payment_days / 252.0, symbol="T")
-        df = g.let("discount_factor", exp(-c.risk_free * T), symbol="DF")
-        fv = g.let("future_value", c.forward_price - c.strike, symbol="FV")
-        g.let("present_value", fv * df, symbol="PV")
+
+        @g.formula(symbol="T")
+        def year_fraction(payment_days):
+            return payment_days / 252.0
+
+        @g.formula(symbol="DF")
+        def discount_factor(risk_free, year_fraction):
+            return exp(-risk_free * year_fraction)
+
+        @g.formula(symbol="FV")
+        def future_value(forward_price, strike):
+            return forward_price - strike
+
+        @g.formula(symbol="PV")
+        def present_value(future_value, discount_factor):
+            return future_value * discount_factor
+
         g.returns("output", ForwardPricing)
 
-    ``compute(frame, view="output")`` compiles each view column to one nested
-    expression and adds them with a single ``with_columns``.
+    Each parameter is a headless dependency resolved to an input column or a
+    prior term. ``plan(frame, view="output")`` compiles each view column to one
+    nested expression and adds them with a single ``with_columns``. ``g.let(...)``
+    remains the lower-level primitive when an :class:`Expr` is built by hand.
     """
 
     def __init__(self, name: str, *, input: type[Any] | None = None) -> None:
@@ -149,11 +163,25 @@ class FormulaGraph:
     ) -> Callable[[Callable[..., Expr | float | int]], Callable[..., Expr | float | int]]:
         """Decorate a Python function and register its symbolic result as a term.
 
-        Dependencies come only from the function signature: ``c``, ``contract``,
-        ``input`` and ``inputs`` receive the graph input namespace; parameters
-        named after already-declared terms receive ``var(<term>)``. The decorated
-        function must return a Schenberg :class:`Expr` (or a literal number), so
-        the graph remains symbolic, inspectable, and lazily compiled.
+        Dependencies are declared as **headless parameters**: each argument name
+        is resolved to a symbolic ``var`` — from an already-declared term first,
+        otherwise from the graph's input schema. So a formula reads like the math
+        it represents::
+
+            @g.formula(symbol="PV")
+            def present_value(future_value, discount_factor):
+                return future_value * discount_factor
+
+        ``future_value`` and ``discount_factor`` are prior terms; a parameter such
+        as ``spot`` or ``strike`` resolves to the input column of the same name.
+        When an input schema is declared, an unknown parameter fails fast (it is
+        neither a prior term nor an input column), catching typos at definition
+        time. The legacy namespace names ``c``, ``contract``, ``input`` and
+        ``inputs`` still receive the whole input namespace for ``c.<col>`` access,
+        but headless parameters are the preferred public style.
+
+        The decorated function must return a Schenberg :class:`Expr` (or a literal
+        number), so the graph stays symbolic, inspectable, and lazily compiled.
         """
 
         def decorator(fn: Callable[..., Expr | float | int]) -> Callable[..., Expr | float | int]:
@@ -161,13 +189,17 @@ class FormulaGraph:
             term = name or fn_name
             kwargs: dict[str, object] = {}
             for param_name in inspect.signature(fn).parameters:
-                if param_name in {"c", "contract", "input", "inputs"}:
+                if param_name in self._terms:
+                    kwargs[param_name] = var(param_name)
+                elif param_name in {"c", "contract", "input", "inputs"}:
                     kwargs[param_name] = self.input
-                elif param_name in self._terms:
+                elif self._input_names is None or param_name in self._input_names:
                     kwargs[param_name] = var(param_name)
                 else:
                     raise ValueError(
-                        f"unknown formula dependency {param_name!r} in formula {fn_name!r}"
+                        f"unknown formula dependency {param_name!r} in formula {fn_name!r}: "
+                        "not a prior term or an input column of "
+                        f"{self.name!r}"
                     )
             self.let(
                 term,

@@ -184,7 +184,9 @@ class With:
     user-supplied — the schema declares them, the user never passes them."""
 
     def __class_getitem__(cls, role: MarketRole) -> type[pa.DataFrameModel]:
-        role = role.to_role() if hasattr(role, "to_role") else role
+        to_role = getattr(role, "to_role", None)
+        if callable(to_role):
+            role = to_role()
         namespace: dict[str, Any] = {
             "__annotations__": {role.name: float},
             "__module__": __name__,
