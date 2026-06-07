@@ -4,7 +4,7 @@ subtitle: "Headless formula parameters, semantic market roles, one lazy Polars p
 ---
 
 Schenberg is a **lazy pricing DSL**. A pricer is a small *symbolic* program — a
-`FormulaGraph` of named terms — and the same program compiles three ways from one
+`Formula[ForwardInput, ForwardOutput]` of named terms — and the same program compiles three ways from one
 declaration:
 
 - to a lazy **Polars** expression (what runs),
@@ -23,7 +23,7 @@ from datetime import date
 import polars as pl
 
 from schenberg import (
-    FormulaGraph, MarketSnapshot, With, bind, exp, market_role,
+    Formula, MarketSnapshot, With, bind, exp, market_role,
 )
 from schenberg.domain.base import SchenbergDataFrameModel
 from schenberg_quarto import show_formulas, show_graph, show_explain
@@ -54,6 +54,15 @@ class ForwardInput(With[ForwardRate], With[RiskFreeRate], SchenbergDataFrameMode
     currency: str
     strike: float
     payment_days: int
+
+
+class ForwardOutput(SchenbergDataFrameModel):
+    instrument_id: str
+    future_value: float
+    present_value: float
+    value: float
+    delta: float
+    currency: str
 ```
 
 ## 2. Write the math as headless formulas
@@ -63,7 +72,7 @@ prior term or an input column. The function body reads like the math — no
 `c.`/`contract.` indirection.
 
 ```{python}
-g = FormulaGraph("forward", input=ForwardInput)
+g = Formula[ForwardInput, ForwardOutput]("forward")
 
 
 @g.formula(symbol="T", description="business-day year fraction")
@@ -93,6 +102,7 @@ def delta(discount_factor):
 
 g.returns(
     "output",
+    ForwardOutput,
     instrument_id="instrument_id",
     future_value="future_value",
     present_value="present_value",
@@ -112,7 +122,7 @@ never drift from what executes.
 show_formulas(g)
 ```
 
-And the dependency DAG, straight from `graph.to_mermaid()`:
+And the typed dependency DAG, straight from `graph.to_mermaid()` as `Formula[ForwardInput, ForwardOutput]`:
 
 ```{python}
 #| output: asis
