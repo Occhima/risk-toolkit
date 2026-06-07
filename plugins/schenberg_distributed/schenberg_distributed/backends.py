@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
+import importlib
 from collections.abc import Callable, Mapping
 from enum import StrEnum
 from typing import Any, cast
 
 import polars as pl
-import ray
 
 CollectFn = Callable[[pl.LazyFrame, Mapping[str, Any]], pl.DataFrame]
 
@@ -50,6 +50,10 @@ def collect_ray(
     init_kwargs: Mapping[str, Any] | None = None,
 ) -> pl.DataFrame:
     """Collect a lazy pricing frame after ensuring Ray is initialized."""
+    try:
+        ray = importlib.import_module("ray")
+    except ImportError as exc:
+        raise ImportError("Ray backend requires installing schenberg-distributed[ray]") from exc
     if not ray.is_initialized():
         ray.init(ignore_reinit_error=True, **dict(init_kwargs or {}))
     return cast(pl.DataFrame, lf.collect(**dict(collect_kwargs)))
