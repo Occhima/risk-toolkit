@@ -31,16 +31,16 @@ def decorated_graph(name: str = "forward") -> FormulaGraph:
     g = FormulaGraph(name, input=ForwardInput)
 
     @g.formula(symbol="T", description="business-year fraction", tags=("time",))
-    def year_fraction(c):
-        return c.payment_days / 252.0
+    def year_fraction(payment_days):
+        return payment_days / 252.0
 
     @g.formula(symbol="DF")
-    def discount_factor(c, year_fraction):
-        return exp(-c.risk_free_rate * year_fraction)
+    def discount_factor(risk_free_rate, year_fraction):
+        return exp(-risk_free_rate * year_fraction)
 
     @g.formula(symbol="FV")
-    def future_value(c):
-        return c.forward_rate - c.strike
+    def future_value(forward_rate, strike):
+        return forward_rate - strike
 
     @g.formula(symbol="PV")
     def present_value(future_value, discount_factor):
@@ -119,8 +119,8 @@ def test_formula_facade_supports_decorator() -> None:
     f = Formula[ForwardInput, ForwardOutput]("facade")
 
     @f.formula(symbol="V")
-    def value(c):
-        return c.forward_rate - c.strike
+    def value(forward_rate, strike):
+        return forward_rate - strike
 
     @f.formula(symbol="Delta")
     def delta():
@@ -130,6 +130,33 @@ def test_formula_facade_supports_decorator() -> None:
     out = f.plan(frame()).collect()
     assert out.select("value").item() == pytest.approx(10.0)
     assert out.select("delta").item() == pytest.approx(1.0)
+
+
+def test_headless_parameter_resolves_to_input_column() -> None:
+    """A bare parameter named after an input column is injected as ``var(name)``
+    — no ``c.`` indirection — and the compiled plan reads that column."""
+    g = FormulaGraph("headless", input=ForwardInput)
+
+    @g.formula(symbol="FV")
+    def future_value(forward_rate, strike):
+        return forward_rate - strike
+
+    assert g.dependencies_of("future_value") == {"forward_rate", "strike"}
+    out = g.plan(frame(), outputs={"fv": "future_value"}).collect()
+    assert out.select("fv").item() == pytest.approx(10.0)
+
+
+def test_legacy_namespace_parameter_still_supported() -> None:
+    """``c``/``contract``/``input``/``inputs`` keep receiving the input namespace,
+    so the lower-level ``c.<col>`` style remains backward compatible."""
+    g = FormulaGraph("legacy", input=ForwardInput)
+
+    @g.formula(symbol="FV")
+    def future_value(c):
+        return c.forward_rate - c.strike
+
+    out = g.plan(frame(), outputs={"fv": "future_value"}).collect()
+    assert out.select("fv").item() == pytest.approx(10.0)
 
 
 def test_dependency_by_parameter_and_input_namespace() -> None:

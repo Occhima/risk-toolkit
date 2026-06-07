@@ -20,18 +20,20 @@ from schenberg.core.expr import exp
 g = FormulaGraph("my_pricer", input=MyInput)
 
 @g.formula(symbol="T")
-def year_fraction(c):
-    return c.payment_days / 252.0
+def year_fraction(payment_days):
+    return payment_days / 252.0
 
 @g.formula(symbol="DF")
-def discount_factor(c, year_fraction):
-    return exp(-c.risk_free_rate * year_fraction)
+def discount_factor(risk_free_rate, year_fraction):
+    return exp(-risk_free_rate * year_fraction)
 ```
 
-The function signature is the dependency list. Parameters named `c`, `contract`,
-`input`, or `inputs` receive the graph input namespace. Parameters named after
-already-defined terms receive symbolic references to those terms. Unknown
-parameters fail early with a clear error.
+The function signature is the dependency list, declared as **headless
+parameters**: each argument resolves to a symbolic `var` — an already-defined
+term first, otherwise an input-schema column (contract or pre-resolved market
+data). Unknown parameters fail early with a clear error. The legacy namespace
+names `c`, `contract`, `input`, and `inputs` still receive the whole input
+namespace for backward compatibility.
 
 `@g.formula` registers the returned `Expr` through the same infrastructure as
 `g.let(...)`; it does not create Polars closures, Python UDFs, row-wise loops, or

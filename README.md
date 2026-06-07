@@ -43,16 +43,16 @@ class ForwardInput(With[ForwardRate], With[RiskFreeRate], SchenbergDataFrameMode
 g = FormulaGraph("forward", input=ForwardInput)
 
 @g.formula(symbol="T")
-def year_fraction(c):
-    return c.payment_days / 252.0
+def year_fraction(payment_days):
+    return payment_days / 252.0
 
 @g.formula(symbol="DF")
-def discount_factor(c, year_fraction):
-    return exp(-c.risk_free_rate * year_fraction)
+def discount_factor(risk_free_rate, year_fraction):
+    return exp(-risk_free_rate * year_fraction)
 
 @g.formula(symbol="FV")
-def future_value(c):
-    return c.forward_rate - c.strike
+def future_value(forward_rate, strike):
+    return forward_rate - strike
 
 @g.formula(symbol="PV")
 def present_value(future_value, discount_factor):
@@ -102,9 +102,14 @@ print(result.collect())
 
 `@g.formula(...)` is the ergonomic API for registering terms. The default term
 name is the Python function name; `name=`, `symbol=`, `description=`, `tags=` and
-`dtype=` are supported. Dependencies are inferred from the function signature:
-`c`, `contract`, `input` and `inputs` receive the graph input namespace, and any
-parameter named after an earlier term receives that symbolic term.
+`dtype=` are supported. Dependencies are declared as **headless parameters**:
+each argument name is resolved to a symbolic `var` — from an earlier term first,
+otherwise from the graph's input schema (contract *and* pre-resolved market
+columns alike). So a formula reads like the math it represents — `def
+present_value(future_value, discount_factor): ...` — with no `c.`/`contract.`
+indirection. With an input schema declared, an unknown parameter fails fast at
+definition time. The legacy namespace names `c`, `contract`, `input` and
+`inputs` still receive the whole input namespace for backward compatibility.
 
 The decorated function returns Schenberg `Expr` nodes, not opaque Python UDFs, so
 introspection and compilation still work:

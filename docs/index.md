@@ -15,12 +15,12 @@ from schenberg.core.expr import exp
 g = FormulaGraph("forward", input=ForwardInput)
 
 @g.formula(symbol="T")
-def year_fraction(c):
-    return c.payment_days / 252.0
+def year_fraction(payment_days):
+    return payment_days / 252.0
 
 @g.formula(symbol="DF")
-def discount_factor(c, year_fraction):
-    return exp(-c.risk_free_rate * year_fraction)
+def discount_factor(risk_free_rate, year_fraction):
+    return exp(-risk_free_rate * year_fraction)
 ```
 
 The same declaration can be interpreted as lazy Polars, LaTeX, Mermaid,
