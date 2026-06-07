@@ -109,3 +109,36 @@ uv run marimo export html docs/examples/01_forward_pricer.py -o docs/examples/01
 uv run marimo export html docs/examples/02_forward_positions.py -o docs/examples/02_forward_positions.html
 uv run marimo export html docs/examples/03_usdbrl_df_fixing.py -o docs/examples/03_usdbrl_df_fixing.html
 ```
+
+## Extending with market roles and pricer boundaries
+
+When adding an instrument, keep the instrument example local (for example under
+`docs/examples/`) and keep the public API small. Declare semantic market reads
+outside the graph, bind them to the trade frame, then plan the graph:
+
+```python
+Spot = FIXINGS.value("USD/BRL", as_="spot").source("fixings").by(
+    currency_pair="currency_pair"
+)
+Vol = (
+    VOLS.implied("USD/BRL", as_="vol")
+    .source("vol_surface")
+    .for_expiry("expiry")
+    .for_strike("strike")
+)
+RiskFree = CURVES.zero_rate("BRL_DI", as_="risk_free_rate").source("curves").for_tenor(
+    "payment_days"
+)
+
+class VanillaOptionInput(With[Spot], With[Vol], With[RiskFree], SchenbergDataFrameModel):
+    ...
+
+@price_function
+def price_option(trades, market):
+    enriched = bind(trades, market, VanillaOptionInput)
+    return option_graph.plan(enriched, view="output")
+```
+
+The graph should use only resolved columns. Position direction (`side`, book,
+quantity) belongs in position or structure composition layers, while structures
+are simply tables of already-priceable legs joined to `InstrumentValue`.

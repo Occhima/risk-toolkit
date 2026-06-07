@@ -22,7 +22,7 @@ from typing import Any
 
 import polars as pl
 
-_UNARY = {"neg", "exp", "log", "abs", "sqrt"}
+_UNARY = {"neg", "exp", "log", "abs", "sqrt", "normal_cdf", "normal_pdf"}
 _BINARY = {"add", "sub", "mul", "div", "pow", "gt", "ge", "lt", "le", "eq"}
 
 
@@ -119,6 +119,16 @@ def sqrt(x: Any) -> Expr:
     return Expr("sqrt", (lit(x),))
 
 
+def normal_cdf(x: Any) -> Expr:
+    """Standard-normal CDF using a small vectorized Polars approximation."""
+    return Expr("normal_cdf", (lit(x),))
+
+
+def normal_pdf(x: Any) -> Expr:
+    """Standard-normal probability density."""
+    return Expr("normal_pdf", (lit(x),))
+
+
 def where(cond: Expr, a: Any, b: Any) -> Expr:
     """Branch: ``a`` where ``cond`` is true, else ``b``."""
     return Expr("where", (cond, lit(a), lit(b)))
@@ -158,6 +168,21 @@ def compile_polars(e: Expr) -> pl.Expr:
             return compile_polars(x).abs()
         case Expr(op="sqrt", args=(x,)):
             return compile_polars(x).sqrt()
+        case Expr(op="normal_pdf", args=(x,)):
+            z = compile_polars(x)
+            return pl.lit(0.3989422804014327) * (pl.lit(-0.5) * z * z).exp()
+        case Expr(op="normal_cdf", args=(x,)):
+            # Abramowitz-Stegun 7.1.26, vectorized with native Polars expressions.
+            # Max absolute error is around 7.5e-8: ample for simple vanilla examples.
+            z = compile_polars(x)
+            a = z.abs()
+            t = 1.0 / (1.0 + 0.2316419 * a)
+            poly = t * (
+                0.319381530
+                + t * (-0.356563782 + t * (1.781477937 + t * (-1.821255978 + t * 1.330274429)))
+            )
+            approx_pos = 1.0 - (pl.lit(0.3989422804014327) * (pl.lit(-0.5) * a * a).exp() * poly)
+            return pl.when(z >= 0).then(approx_pos).otherwise(1.0 - approx_pos)
         case Expr(op="where", args=(cond, a, b)):
             return (
                 pl.when(compile_polars(cond)).then(compile_polars(a)).otherwise(compile_polars(b))
@@ -202,6 +227,19 @@ def _eval_numeric(e: Expr, env: Mapping[str, Any], xp: Any) -> Any:
             return xp.abs(_eval_numeric(x, env, xp))
         case Expr(op="sqrt", args=(x,)):
             return xp.sqrt(_eval_numeric(x, env, xp))
+        case Expr(op="normal_pdf", args=(x,)):
+            z = _eval_numeric(x, env, xp)
+            return 0.3989422804014327 * xp.exp(-0.5 * z * z)
+        case Expr(op="normal_cdf", args=(x,)):
+            z = _eval_numeric(x, env, xp)
+            a = xp.abs(z)
+            t = 1.0 / (1.0 + 0.2316419 * a)
+            poly = t * (
+                0.319381530
+                + t * (-0.356563782 + t * (1.781477937 + t * (-1.821255978 + t * 1.330274429)))
+            )
+            approx_pos = 1.0 - 0.3989422804014327 * xp.exp(-0.5 * a * a) * poly
+            return xp.where(z >= 0, approx_pos, 1.0 - approx_pos)
         case Expr(op="where", args=(cond, a, b)):
             return xp.where(
                 _eval_numeric(cond, env, xp),
@@ -287,6 +325,10 @@ def to_latex(e: Expr) -> str:
                 return rf"\left|{go(x)}\right|"
             case Expr(op="sqrt", args=(x,)):
                 return rf"\sqrt{{{go(x)}}}"
+            case Expr(op="normal_cdf", args=(x,)):
+                return rf"\Phi\left({go(x)}\right)"
+            case Expr(op="normal_pdf", args=(x,)):
+                return rf"\phi\left({go(x)}\right)"
             case Expr(op="div", args=(a, b)):
                 return rf"\frac{{{go(a)}}}{{{go(b)}}}"
             case Expr(op="mul", args=(a, b)):

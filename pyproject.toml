@@ -87,6 +87,8 @@ ignore = ["PLR0913"]
 # not a smell.
 "docs/examples/01_*.py" = ["F811", "B018", "PLR1711", "PLR0913", "PLR2004", "PLC0415", "I001", "E402"]
 "docs/examples/02_*.py" = ["F811", "B018", "PLR1711", "PLR0913", "PLR2004", "PLC0415", "I001", "E402"]
+"docs/examples/04_*.py" = ["F811", "B018", "PLR1711", "PLR0913", "PLR2004", "PLC0415", "I001", "E402"]
+"docs/examples/05_*.py" = ["F811", "B018", "PLR1711", "PLR0913", "PLR2004", "PLC0415", "I001", "E402"]
 "docs/examples/03_*.py" = ["F811", "B018", "PLR1711", "PLR0913", "PLR2004", "PLC0415", "I001", "E402"]
 "docs/examples/08_*.py" = ["F811", "B018", "PLR1711", "PLR0913", "PLR2004", "PLC0415", "I001", "E402"]
 "docs/examples/09_*.py" = ["F811", "B018", "PLR1711", "PLR0913", "PLR2004", "PLC0415", "I001", "E402"]
@@ -111,4 +113,6 @@ docs-serve = "mkdocs serve --dev-addr 0.0.0.0:8000"
 examples-forward-html = "marimo export html docs/examples/01_forward_pricer.py -o docs/examples/01_forward_pricer.html"
 examples-positions-html = "marimo export html docs/examples/02_forward_positions.py -o docs/examples/02_forward_positions.html"
 examples-usdbrl-html = "marimo export html docs/examples/03_usdbrl_df_fixing.py -o docs/examples/03_usdbrl_df_fixing.html"
-examples-html = ["examples-forward-html", "examples-positions-html", "examples-usdbrl-html"]
+examples-vanilla-option-html = "marimo export html docs/examples/04_vanilla_option.py -o docs/examples/04_vanilla_option.html"
+examples-option-pnl-html = "marimo export html docs/examples/05_option_pnl_explain.py -o docs/examples/05_option_pnl_explain.html"
+examples-html = ["examples-forward-html", "examples-positions-html", "examples-usdbrl-html", "examples-vanilla-option-html", "examples-option-pnl-html"]

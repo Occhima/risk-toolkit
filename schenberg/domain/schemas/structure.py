@@ -4,11 +4,11 @@ from schenberg.domain.base import SchenbergDataFrameModel
 
 
 class StructureLeg(SchenbergDataFrameModel):
-    """One component leg of a structured product."""
+    """One already-priceable leg of a structured product."""
 
     structure_id: str
     leg_id: str
-    component_instrument_type: str
-    component_instrument_id: str
+    instrument_type: str
+    instrument_id: str
     quantity: float
-    side: float
+    weight: float
