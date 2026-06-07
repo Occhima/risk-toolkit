@@ -26,3 +26,6 @@ docs-build:
 
 docs-serve:
     uv run mkdocs serve --dev-addr 0.0.0.0:8000
+
+quarto-render:
+    cd docs/examples && quarto render
