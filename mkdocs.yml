@@ -73,6 +73,7 @@ nav:
       - Autodiff vanna & volga: examples/03_autodiff_greeks.html
       - Scenarios & historical VaR: examples/04_scenario_var.html
       - QuantLib benchmark: examples/05_quantlib_benchmark.html
+      - Equity book end to end: examples/06_equity_book.html
   - Extending: extending.md
   - API Reference:
       - api/index.md
