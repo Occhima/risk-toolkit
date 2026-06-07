@@ -228,3 +228,43 @@ def test_graph_creation_and_planning_do_not_call_collect() -> None:
         and node.func.attr == "collect"
     ]
     assert not calls
+
+
+def test_plan_materialized_matches_inlined_result() -> None:
+    g = decorated_graph()
+
+    materialized = g.plan(frame(), view="output", materialize_terms=True).collect()
+    inlined = (
+        g.plan(frame(), view="output", materialize_terms=False)
+        .select(materialized.columns)
+        .collect()
+    )
+
+    assert materialized.to_dicts() == inlined.to_dicts()
+
+
+def test_plan_materialized_does_not_return_intermediate_columns() -> None:
+    out = decorated_graph().plan(frame(), view="output").collect()
+
+    assert out.columns == ["instrument_id", "value", "delta", "currency"]
+    assert "year_fraction" not in out.columns
+    assert "discount_factor" not in out.columns
+
+
+def test_stage_still_returns_intermediate_columns() -> None:
+    staged = decorated_graph().stage(frame(), view="output").collect()
+
+    assert "year_fraction" in staged.columns
+    assert "discount_factor" in staged.columns
+    assert "present_value" in staged.columns
+
+
+def test_term_cannot_shadow_input_column() -> None:
+    g = FormulaGraph("bad", input=ForwardInput)
+
+    with pytest.raises(ValueError, match="shadows an input column"):
+        g.let("strike", 1.0)
+
+
+def test_plan_remains_lazy() -> None:
+    assert isinstance(decorated_graph().plan(frame(), view="output"), pl.LazyFrame)

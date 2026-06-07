@@ -187,9 +187,7 @@ Pandera validation belongs at public pricer/schema boundaries (for example via
 ```python
 from schenberg import CURVES, FIXINGS, VOLS, FormulaGraph, With, bind
 
-Spot = FIXINGS.value("USD/BRL", as_="spot").source("fixings").by(
-    currency_pair="currency_pair"
-)
+Spot = FIXINGS.value("USD/BRL", as_="spot").source("fixings")
 Vol = (
     VOLS.implied("USD/BRL", as_="vol")
     .source("vol_surface")

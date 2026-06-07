@@ -146,6 +146,8 @@ class FormulaGraph:
         reference to it. ``expr`` may use input vars and earlier terms."""
         if name in self._terms:
             raise ValueError(f"term {name!r} already defined in graph {self.name!r}")
+        if self._input_names is not None and name in self._input_names:
+            raise ValueError(f"term {name!r} shadows an input column in graph {self.name!r}")
         node = expr if isinstance(expr, Expr) else lit(expr)
         self._assert_acyclic(name, node)
         self._terms[name] = node
@@ -262,14 +264,57 @@ class FormulaGraph:
         *,
         outputs: Mapping[str, str] | None = None,
         view: str | None = None,
+        materialize_terms: bool = True,
     ) -> pl.LazyFrame:
-        """Interpret the graph as one lazy ``with_columns``. The graph never reads
-        market data — market columns arrive pre-resolved as input columns. Fails
-        fast when required input columns are absent. Stays lazy."""
+        """Interpret the graph as a lazy output view.
+
+        By default reachable terms are computed once in topological order, then
+        the requested output columns are selected. Passing
+        ``materialize_terms=False`` keeps the legacy recursive inlining path. The
+        graph never reads market data — market columns arrive pre-resolved as
+        input columns. Fails fast when required input columns are absent and stays
+        lazy.
+        """
+        if materialize_terms:
+            return self._plan_materialized(frame, outputs=outputs, view=view)
+        return self._plan_inlined(frame, outputs=outputs, view=view)
+
+    def _plan_inlined(
+        self,
+        frame: pl.LazyFrame,
+        *,
+        outputs: Mapping[str, str] | None = None,
+        view: str | None = None,
+    ) -> pl.LazyFrame:
         mapping = self._resolve_view(outputs, view)
         self._require_inputs(frame, mapping.values())
         columns = [self._compile(name).alias(col) for col, name in mapping.items()]
         return frame.with_columns(columns)
+
+    def _plan_materialized(
+        self,
+        frame: pl.LazyFrame,
+        *,
+        outputs: Mapping[str, str] | None = None,
+        view: str | None = None,
+    ) -> pl.LazyFrame:
+        mapping = self._resolve_view(outputs, view)
+        targets = list(mapping.values())
+        self._require_inputs(frame, targets)
+
+        reachable = self._reachable(targets)
+        order = [name for name in self.topological_order() if name in reachable]
+        for name in order:
+            frame = frame.with_columns(compile_polars(self._terms[name]).alias(name))
+
+        available = set(frame.collect_schema().names())
+        columns = []
+        for out_col, term_name in mapping.items():
+            if term_name in self._terms or term_name in available:
+                columns.append(pl.col(term_name).alias(out_col))
+            else:
+                columns.append(self._compile(term_name).alias(out_col))
+        return frame.select(columns)
 
     def stage(
         self,

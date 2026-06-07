@@ -49,7 +49,11 @@ def collect_ray(
     *,
     init_kwargs: Mapping[str, Any] | None = None,
 ) -> pl.DataFrame:
-    """Collect a lazy pricing frame after ensuring Ray is initialized."""
+    """Initialize Ray if needed, then collect with Polars' local engine.
+
+    This is a materialization policy hook, not a distributed Polars optimizer for
+    a single LazyFrame. Register a custom backend for different behavior.
+    """
     try:
         ray = importlib.import_module("ray")
     except ImportError as exc:

@@ -102,12 +102,10 @@ Position measures may use `side` and `quantity`; pure pricing graphs should not.
 
 ## HTML examples
 
-Export notebooks directly with Marimo:
+Examples live under `docs/examples/*.qmd` and render with Quarto:
 
 ```bash
-uv run marimo export html docs/examples/01_forward_pricer.py -o docs/examples/01_forward_pricer.html
-uv run marimo export html docs/examples/02_forward_positions.py -o docs/examples/02_forward_positions.html
-uv run marimo export html docs/examples/03_usdbrl_df_fixing.py -o docs/examples/03_usdbrl_df_fixing.html
+uv run poe examples-html
 ```
 
 ## Extending with market roles and pricer boundaries
@@ -117,9 +115,7 @@ When adding an instrument, keep the instrument example local (for example under
 outside the graph, bind them to the trade frame, then plan the graph:
 
 ```python
-Spot = FIXINGS.value("USD/BRL", as_="spot").source("fixings").by(
-    currency_pair="currency_pair"
-)
+Spot = FIXINGS.value("USD/BRL", as_="spot").source("fixings")
 Vol = (
     VOLS.implied("USD/BRL", as_="vol")
     .source("vol_surface")

@@ -42,9 +42,11 @@ collect data. `g.let(...)` remains available as the low-level primitive.
 ## Lazy interpretation
 
 `graph.plan(frame, view="output")` returns a `pl.LazyFrame`. It validates that
-required columns are present, adds view expressions as `with_columns`, and never
-calls `.collect()`. Market data is resolved before this boundary by `bind`, so a
-formula graph never reads a `MarketSnapshot` directly.
+required columns are present, materializes reachable terms lazily in dependency
+order, then selects only the requested output view. It never calls `.collect()`.
+Pass `materialize_terms=False` for the legacy recursive inlining path. Market
+data is resolved before this boundary by `bind`, so a formula graph never reads a
+`MarketSnapshot` directly.
 
 `graph.stage(frame, view="output")` returns a lazy debug frame with intermediate
 terms materialised in dependency order.
@@ -63,9 +65,17 @@ multiple ways:
 ## Market data boundary
 
 Use `market_role(...).read(...).by(...)` and `With[role]` mixins on an input
-schema. `bind(raw_trades, market_snapshot, InputSchema)` performs the joins and
-returns an enriched lazy frame with market columns available as ordinary inputs.
-Fixing rules, including custom date keys, also live at this boundary.
+schema. Semantic helpers such as `CURVES.zero_rate("BRL_DI")` bind that argument
+as a literal quote-side key; dynamic per-row keys remain available with `.by(...)`.
+`bind(raw_trades, market_snapshot, InputSchema)` performs the joins and returns
+an enriched lazy frame with market columns available as ordinary inputs. It fails
+loudly if a market output would overwrite an existing non-key column. Fixing
+rules, including custom date keys, also live at this boundary.
+
+`MarketSnapshot.at(...).source(...).build()` does not validate `unique_by` by
+default because uniqueness checks may collect market source data. Use
+`build(validate=True)` or `market.validate()` at an explicit market-data boundary
+when duplicate-key checking is required.
 
 ## Position boundary
 
@@ -75,9 +85,12 @@ to `PositionView`, reusable position measures, and `Fold` rollups.
 
 ## Examples and HTML
 
-Instrument-specific example pricers live in `docs/examples` as self-contained
-notebooks/scripts that use the public Schenberg API. They are exported directly
-with `marimo export html`; no shell export wrapper is needed.
+Instrument-specific example pricers live in `docs/examples/*.qmd` as self-contained
+Quarto notebooks that use the public Schenberg API. Render them with:
+
+```bash
+uv run poe examples-html
+```
 
 ## Market semantics stop at `bind`
 
@@ -87,14 +100,15 @@ surface. Market semantics live in `MarketRole` declarations, including the light
 semantic DSL:
 
 ```python
-Spot = FIXINGS.value("USD/BRL", as_="spot").source("fixings").by(
-    currency_pair="currency_pair"
-)
+Spot = FIXINGS.value("USD/BRL", as_="spot").source("fixings")
 Vol = (
     VOLS.implied("USD/BRL", as_="vol")
     .source("vol_surface")
     .for_expiry("expiry")
     .for_strike("strike")
+)
+RiskFree = CURVES.zero_rate("BRL_DI", as_="risk_free_rate").source("curves").for_tenor(
+    "payment_days"
 )
 
 class VanillaOptionInput(With[Spot], With[Vol], With[RiskFree], SchenbergDataFrameModel):

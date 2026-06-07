@@ -103,6 +103,15 @@ class Fixing:
 
 
 @dataclass(frozen=True, slots=True)
+class LiteralBinding:
+    """A quote-side key matched against a literal value via a transient left column."""
+
+    right: str
+    value: object
+    temp_left: str
+
+
+@dataclass(frozen=True, slots=True)
 class MarketRole:
     """One resolvable market column: read + keys + optional fixing + published name."""
 
@@ -110,6 +119,7 @@ class MarketRole:
     source: str | None = None  # snapshot source / table name
     value_col: str | None = None  # quote-side column to read
     exact: tuple[ColumnBinding, ...] = ()  # contract column -> quote column
+    literal: tuple[LiteralBinding, ...] = ()  # literal value -> quote column
     fixing_quote: str | None = None  # quote-side date column the fixing matches
     fixing_rule: Fixing | None = None
 
@@ -121,6 +131,23 @@ class MarketRole:
         """Declare exact join keys as ``contract_column=quote_column`` pairs."""
         exact = tuple(ColumnBinding(left, right) for left, right in bindings.items())
         return replace(self, exact=self.exact + exact)
+
+    def by_literal(self, **bindings: object) -> MarketRole:
+        """Declare quote-side join keys matched against literal values.
+
+        Literal values are added as transient left columns so the existing lazy
+        market join path can resolve constants without requiring contract rows to
+        carry redundant key columns.
+        """
+        literal = tuple(
+            LiteralBinding(
+                right=quote_col,
+                value=value,
+                temp_left=f"__const_{self.name}_{quote_col}",
+            )
+            for quote_col, value in bindings.items()
+        )
+        return replace(self, literal=self.literal + literal)
 
     def fixing(self, quote_col: str, rule: Fixing | pl.Expr) -> MarketRole:
         """Add a derived date key: ``rule`` (over contract columns) matches the
@@ -155,6 +182,10 @@ class MarketRole:
         left-join the source, publish the value as ``name``, drop the transient
         fixing column. Stays lazy."""
         bindings = self.exact
+        drop_cols = [literal.temp_left for literal in self.literal]
+        for literal in self.literal:
+            lf = lf.with_columns(pl.lit(literal.value).alias(literal.temp_left))
+            bindings = bindings + (ColumnBinding(literal.temp_left, literal.right),)
         fix_col: str | None = None
         if self.fixing_rule is not None:
             if self.fixing_quote is None:
@@ -162,8 +193,9 @@ class MarketRole:
             fix_col = f"__fix_{self.name}"
             lf = lf.with_columns(self.fixing_rule.expr().alias(fix_col))
             bindings = bindings + (ColumnBinding(fix_col, self.fixing_quote),)
+            drop_cols.append(fix_col)
         out = self._requirement(bindings).attach(lf, snapshot)
-        return out.drop(fix_col) if fix_col is not None else out
+        return out.drop(drop_cols) if drop_cols else out
 
 
 def market_role(name: str) -> MarketRole:

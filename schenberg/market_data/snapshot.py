@@ -60,6 +60,15 @@ class MarketSnapshot:
     def attach(self, lf: pl.LazyFrame, req: MarketDependency) -> pl.LazyFrame:
         return req.attach(lf, self)
 
+    def validate(self) -> None:
+        """Validate all source uniqueness constraints at an explicit boundary.
+
+        This may collect market source data; callers opt in after construction
+        when they want duplicate-key checks.
+        """
+        for source in self.sources.values():
+            source.validate_unique_keys()
+
     def with_source(self, source: MarketSource) -> MarketSnapshot:
         sources = dict(self.sources)
         sources[source.name] = source
@@ -103,9 +112,13 @@ class _SnapshotBuilder:
         unique_by = tuple(getattr(schema, "__unique_by__", ()))
         return self.source(name, data, unique_by=unique_by, schema=schema)
 
-    def build(self, *, validate: bool = True) -> MarketSnapshot:
-        """Freeze into a :class:`MarketSnapshot`, validating quote-key uniqueness
-        at this explicit market boundary unless ``validate=False``."""
+    def build(self, *, validate: bool = False) -> MarketSnapshot:
+        """Freeze into a :class:`MarketSnapshot`.
+
+        Quote-key uniqueness validation is opt-in because it may collect market
+        source data. Pass ``validate=True`` or call ``market.validate()`` at an
+        explicit market-data boundary.
+        """
         return MarketSnapshot.from_sources(
             as_of=self.as_of, sources=self._sources, validate=validate
         )

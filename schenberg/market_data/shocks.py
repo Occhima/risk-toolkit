@@ -15,12 +15,11 @@ the convenience constructors here. Every shock can :meth:`explain` itself.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import polars as pl
 
 from schenberg.market_data.snapshot import MarketSnapshot
-from schenberg.market_data.sources import MarketSource
 
 ShockFn = Callable[[MarketSnapshot], MarketSnapshot]
 
@@ -83,11 +82,7 @@ def modify_source(
     """
     source = market.source(source_name)
     new_expr = fn_or_expr if isinstance(fn_or_expr, pl.Expr) else fn_or_expr(pl.col(column))
-    bumped = MarketSource(
-        name=source.name,
-        data=source.data.with_columns(new_expr.alias(column)),
-        schema=source.schema,
-    )
+    bumped = replace(source, data=source.data.with_columns(new_expr.alias(column)))
     return market.with_source(bumped)
 
 

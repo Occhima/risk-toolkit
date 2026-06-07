@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date
 
 import polars as pl
+import pytest
 from schenberg import CURVES, FIXINGS, VOLS, MarketSnapshot, With, bind, market_role
 from schenberg.domain.base import SchenbergDataFrameModel
 from schenberg.market_data.date_rules import same_day
@@ -16,10 +17,8 @@ def test_semantic_roles_build_market_roles() -> None:
     assert isinstance(role, MarketRole)
     assert role.name == "risk_free_rate"
     assert role.source == "curves"
-    assert [(b.left, b.right) for b in role.exact] == [
-        ("curve", "curve"),
-        ("payment_days", "tenor_days"),
-    ]
+    assert [(b.left, b.right) for b in role.exact] == [("payment_days", "tenor_days")]
+    assert [(b.value, b.right) for b in role.literal] == [("BRL_DI", "curve")]
 
 
 def test_semantic_expiry_strike_and_fixing() -> None:
@@ -30,10 +29,10 @@ def test_semantic_expiry_strike_and_fixing() -> None:
         .for_strike("strike")
     )
     assert [(b.left, b.right) for b in vol.exact] == [
-        ("currency_pair", "currency_pair"),
         ("expiry", "expiry"),
         ("strike", "strike"),
     ]
+    assert [(b.value, b.right) for b in vol.literal] == [("USD/BRL", "currency_pair")]
     role_expr = (
         FIXINGS.value(as_="spot")
         .source("fixings")
@@ -85,3 +84,76 @@ def test_semantic_bind_matches_manual() -> None:
         bind(trades, market, SemanticInput).collect().to_dicts()
         == bind(trades, market, ManualInput).collect().to_dicts()
     )
+
+
+def test_curve_name_argument_is_literal_join_key_not_trade_column() -> None:
+    RiskFree = (
+        CURVES.zero_rate("BRL_DI", as_="risk_free_rate").source("curves").for_tenor("payment_days")
+    )
+
+    class Input(With[RiskFree], SchenbergDataFrameModel):
+        instrument_id: str
+        payment_days: int
+
+    trades = pl.DataFrame({"instrument_id": ["T1"], "payment_days": [252]}).lazy()
+
+    market = (
+        MarketSnapshot.at(date(2026, 6, 6))
+        .source(
+            "curves",
+            pl.DataFrame(
+                {
+                    "curve": ["BRL_DI"],
+                    "tenor_days": [252],
+                    "zero_rate": [0.10],
+                }
+            ),
+            unique_by=("curve", "tenor_days"),
+        )
+        .build(validate=False)
+    )
+
+    out = bind(trades, market, Input).collect()
+
+    assert out["risk_free_rate"][0] == pytest.approx(0.10)
+    assert "curve" not in out.columns
+    assert not any(c.startswith("__const_") for c in out.columns)
+
+
+def test_dynamic_curve_column_still_supported_with_by() -> None:
+    RiskFree = (
+        CURVES.zero_rate(as_="risk_free_rate")
+        .source("curves")
+        .by(curve="curve")
+        .for_tenor("payment_days")
+    )
+
+    class Input(With[RiskFree], SchenbergDataFrameModel):
+        instrument_id: str
+        curve: str
+        payment_days: int
+
+    trades = pl.DataFrame(
+        {"instrument_id": ["T1", "T2"], "curve": ["BRL_DI", "USD_SOFR"], "payment_days": [252, 252]}
+    ).lazy()
+
+    market = (
+        MarketSnapshot.at(date(2026, 6, 6))
+        .source(
+            "curves",
+            pl.DataFrame(
+                {
+                    "curve": ["BRL_DI", "USD_SOFR"],
+                    "tenor_days": [252, 252],
+                    "zero_rate": [0.10, 0.03],
+                }
+            ),
+            unique_by=("curve", "tenor_days"),
+        )
+        .build(validate=False)
+    )
+
+    out = bind(trades, market, Input).collect()
+
+    assert out["risk_free_rate"].to_list() == pytest.approx([0.10, 0.03])
+    assert "curve" in out.columns

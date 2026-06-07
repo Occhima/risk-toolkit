@@ -1,4 +1,9 @@
-"""Pricing execution contexts for distributed Schenberg graph computations."""
+"""Materialization contexts for Schenberg pricing computations.
+
+This module does not distribute a single Polars lazy query. It provides explicit
+collect policies; the Ray policy initializes Ray and then lets local Polars
+collect the LazyFrame unless a custom backend is registered.
+"""
 
 from __future__ import annotations
 
@@ -19,7 +24,7 @@ class PricingExecutionContext:
     Schenberg pricing graphs intentionally return ``polars.LazyFrame`` objects.
     This context describes how the final ``collect`` boundary should run,
     including any Polars ``LazyFrame.collect`` keyword arguments and optional
-    distributed backend configuration.
+    materialization backend configuration.
     """
 
     backend: PricingBackend = PricingBackend.LOCAL

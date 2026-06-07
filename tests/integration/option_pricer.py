@@ -33,7 +33,7 @@ from schenberg import (
 RiskFree = (
     CURVES.zero_rate("BRL_DI", as_="risk_free_rate").source("curves").for_tenor("payment_days")
 )
-Spot = FIXINGS.value(as_="spot").source("fixings").by(currency_pair="currency_pair")
+Spot = FIXINGS.value("USD/BRL", as_="spot").source("fixings")
 Vol = (
     VOLS.implied("USD/BRL", as_="vol")
     .source("vol_surface")
@@ -45,8 +45,6 @@ Vol = (
 class VanillaOptionTrade(SchenbergDataFrameModel):
     instrument_id: str
     option_type: str
-    currency_pair: str
-    curve: str
     currency: str
     pricing_date: date
     expiry: date
@@ -63,8 +61,6 @@ class VanillaOptionInput(
 ):
     instrument_id: str
     option_type: str
-    currency_pair: str
-    curve: str
     currency: str
     pricing_date: date
     expiry: date
@@ -158,8 +154,6 @@ def sample_trades() -> pl.LazyFrame:
         {
             "instrument_id": ["OPT-CALL-1", "OPT-PUT-1"],
             "option_type": ["call", "put"],
-            "currency_pair": ["USD/BRL", "USD/BRL"],
-            "curve": ["BRL_DI", "BRL_DI"],
             "currency": ["BRL", "BRL"],
             "pricing_date": [date(2026, 6, 6), date(2026, 6, 6)],
             "expiry": [date(2027, 6, 6), date(2027, 6, 6)],
