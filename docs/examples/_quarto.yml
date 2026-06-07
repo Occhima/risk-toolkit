@@ -29,4 +29,3 @@ jupyter: python3
 execute:
   warning: false
   echo: true
-  freeze: auto
