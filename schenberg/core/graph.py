@@ -21,6 +21,7 @@ from typing import Any, cast
 import polars as pl
 
 from schenberg.core.expr import Expr, compile_polars, lit, to_latex, var
+from schenberg.market_data.roles import bind as market_bind
 
 
 def term_name(value: object) -> str:
@@ -620,6 +621,23 @@ class Formula:
         unmapped = {f: f for f in fields if f not in self._g._terms}
         self._g.returns(name, schema, **{f: t for f, t in unmapped.items()})
         return self
+
+    def bind(
+        self,
+        raw: pl.LazyFrame | pl.DataFrame,
+        snapshot: Any,
+        schema: type[Any] | None = None,
+    ) -> pl.LazyFrame:
+        """Resolve market roles for this formula's input schema.
+
+        ``Formula[Input, Output](...).bind(raw, snapshot)`` is a convenience for
+        ``bind(raw, snapshot, Input)``. ``schema`` can be supplied to override the
+        formula's contract type.
+        """
+        resolved = schema or self._contract
+        if resolved is None:
+            raise ValueError(f"graph {self.name!r} has no input schema")
+        return market_bind(raw, snapshot, resolved)
 
     def plan(self, frame: pl.LazyFrame, *, view: str = _OUTPUT_VIEW) -> pl.LazyFrame:
         """The pure lazy plan over an already-bound frame, projected to the view's
