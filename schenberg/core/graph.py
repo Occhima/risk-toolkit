@@ -13,7 +13,8 @@ Nothing here calls ``collect``.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator, Mapping
+import inspect
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass, replace
 from typing import Any, cast
 
@@ -136,6 +137,49 @@ class FormulaGraph:
         self._terms[name] = node
         self._meta[name] = TermMeta(name, symbol, description, tuple(tags), dtype)
         return var(name)
+
+    def formula(
+        self,
+        *,
+        name: str | None = None,
+        symbol: str | None = None,
+        description: str | None = None,
+        tags: Iterable[str] = (),
+        dtype: Any = pl.Float64,
+    ) -> Callable[[Callable[..., Expr | float | int]], Callable[..., Expr | float | int]]:
+        """Decorate a Python function and register its symbolic result as a term.
+
+        Dependencies come only from the function signature: ``c``, ``contract``,
+        ``input`` and ``inputs`` receive the graph input namespace; parameters
+        named after already-declared terms receive ``var(<term>)``. The decorated
+        function must return a Schenberg :class:`Expr` (or a literal number), so
+        the graph remains symbolic, inspectable, and lazily compiled.
+        """
+
+        def decorator(fn: Callable[..., Expr | float | int]) -> Callable[..., Expr | float | int]:
+            fn_name = getattr(fn, "__name__", repr(fn))
+            term = name or fn_name
+            kwargs: dict[str, object] = {}
+            for param_name in inspect.signature(fn).parameters:
+                if param_name in {"c", "contract", "input", "inputs"}:
+                    kwargs[param_name] = self.input
+                elif param_name in self._terms:
+                    kwargs[param_name] = var(param_name)
+                else:
+                    raise ValueError(
+                        f"unknown formula dependency {param_name!r} in formula {fn_name!r}"
+                    )
+            self.let(
+                term,
+                fn(**kwargs),
+                symbol=symbol,
+                description=description,
+                tags=tuple(tags),
+                dtype=dtype,
+            )
+            return fn
+
+        return decorator
 
     def _assert_acyclic(self, name: str, node: Expr) -> None:
         if name in set(_iter_vars(node)):
@@ -445,6 +489,11 @@ class Formula:
 
     def let(self, name: str, expr: Expr | float | int, **meta: Any) -> Expr:
         return self._g.let(name, expr, **meta)
+
+    def formula(
+        self, **meta: Any
+    ) -> Callable[[Callable[..., Expr | float | int]], Callable[..., Expr | float | int]]:
+        return self._g.formula(**meta)
 
     def returns(
         self,

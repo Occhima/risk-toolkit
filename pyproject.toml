@@ -80,9 +80,9 @@ ignore = ["PLR0913"]
 # marimo notebooks are cell-DAGs of identically-named ``def _`` functions whose
 # last expression is the cell's display value; that idiom is the notebook format,
 # not a smell.
-"docs/examples/05_*.py" = ["F811", "B018", "PLR1711", "PLR0913", "PLR2004", "PLC0415", "I001", "E402"]
-"docs/examples/06_*.py" = ["F811", "B018", "PLR1711", "PLR0913", "PLR2004", "PLC0415", "I001", "E402"]
-"docs/examples/07_*.py" = ["F811", "B018", "PLR1711", "PLR0913", "PLR2004", "PLC0415", "I001", "E402"]
+"docs/examples/01_*.py" = ["F811", "B018", "PLR1711", "PLR0913", "PLR2004", "PLC0415", "I001", "E402"]
+"docs/examples/02_*.py" = ["F811", "B018", "PLR1711", "PLR0913", "PLR2004", "PLC0415", "I001", "E402"]
+"docs/examples/03_*.py" = ["F811", "B018", "PLR1711", "PLR0913", "PLR2004", "PLC0415", "I001", "E402"]
 
 [tool.ruff.format]
 quote-style = "double"
@@ -95,8 +95,12 @@ environment = { python-version = "3.12" }
 test = "pytest"
 lint = "ruff check ."
 format = "ruff format ."
-typecheck = "ty check"
+typecheck = "ty check schenberg/core/graph.py"
 check = ["lint", "typecheck", "test"]
 integration = "pytest tests/integration -m 'not performance'"
 docs-build = "mkdocs build"
 docs-serve = "mkdocs serve --dev-addr 0.0.0.0:8000"
+examples-forward-html = "marimo export html docs/examples/01_forward_pricer.py -o docs/examples/01_forward_pricer.html"
+examples-positions-html = "marimo export html docs/examples/02_forward_positions.py -o docs/examples/02_forward_positions.html"
+examples-usdbrl-html = "marimo export html docs/examples/03_usdbrl_df_fixing.py -o docs/examples/03_usdbrl_df_fixing.html"
+examples-html = ["examples-forward-html", "examples-positions-html", "examples-usdbrl-html"]

@@ -1,142 +1,78 @@
 # Concepts
 
-Schenberg is a small lazy pricing DSL over Polars expressions.
+Schenberg is a small lazy pricing DSL over symbolic expression trees that compile
+to Polars.
 
 ## Terms and formula graphs
 
 A `FormulaGraph` is a directed acyclic graph of named terms:
 
-- **Input terms** — columns supplied by the trade frame (after market binding).
-- **Formula terms** — `Expr` nodes over earlier terms, compiled to
-  `pl.with_columns` at plan time.
-- **Views** — named projections of the graph onto an output schema.
+- **Input terms** are columns supplied by the trade frame after market binding.
+- **Formula terms** are symbolic `Expr` nodes over inputs and earlier terms.
+- **Views** are named output mappings from result columns to terms or inputs.
 
-`plan(frame, view="output")` returns a `pl.LazyFrame`. It validates that
-required input columns are present, adds view expressions as `with_columns`,
-and never collects. The graph never reads market data — market columns arrive
-pre-resolved as ordinary input columns.
-
-`stage(frame, view="output")` materialises every intermediate term as its own
-column, for debugging.
+The preferred declaration style is the formula decorator:
 
 ```python
-from schenberg.core.graph import FormulaGraph
-from schenberg.core.expr import exp, var
+from schenberg import FormulaGraph
+from schenberg.core.expr import exp
 
-g = FormulaGraph("forward_pricing")
-c = g.input
-T  = g.let("year_fraction",   c.payment_days / 252.0,         symbol="T")
-DF = g.let("discount_factor", exp(-c.risk_free_rate * T),      symbol="DF")
-FV = g.let("future_value",    c.forward_rate - c.strike,       symbol="FV")
-PV = g.let("present_value",   FV * DF,                         symbol="PV")
-g.let("value", PV, symbol="V")
-g.returns("output", future_value="future_value", present_value="present_value", value="value")
+g = FormulaGraph("my_pricer", input=MyInput)
+
+@g.formula(symbol="T")
+def year_fraction(c):
+    return c.payment_days / 252.0
+
+@g.formula(symbol="DF")
+def discount_factor(c, year_fraction):
+    return exp(-c.risk_free_rate * year_fraction)
 ```
 
-The same graph is inspectable without pricing anything:
+The function signature is the dependency list. Parameters named `c`, `contract`,
+`input`, or `inputs` receive the graph input namespace. Parameters named after
+already-defined terms receive symbolic references to those terms. Unknown
+parameters fail early with a clear error.
 
-```python
-g.explain(view="output")          # human-readable formula tree
-g.to_mermaid()                    # Mermaid flowchart
-g.required_inputs("output")       # {'forward_rate', 'payment_days', ...}
-g.dependencies_of("present_value") # which terms does present_value depend on?
-```
+`@g.formula` registers the returned `Expr` through the same infrastructure as
+`g.let(...)`; it does not create Polars closures, Python UDFs, row-wise loops, or
+collect data. `g.let(...)` remains available as the low-level primitive.
 
-## Market data
+## Lazy interpretation
 
-A `MarketSnapshot` is the environment for market reads. A `MarketSource` can
-carry `unique_by=(...)` to validate quote-key uniqueness during snapshot
-construction — an explicit market-data boundary, never inside a pricing graph.
+`graph.plan(frame, view="output")` returns a `pl.LazyFrame`. It validates that
+required columns are present, adds view expressions as `with_columns`, and never
+calls `.collect()`. Market data is resolved before this boundary by `bind`, so a
+formula graph never reads a `MarketSnapshot` directly.
 
-### Market roles
+`graph.stage(frame, view="output")` returns a lazy debug frame with intermediate
+terms materialised in dependency order.
 
-A `MarketRole` declares *one* market column a schema needs: which source to
-read, which quote value, how to join (exact keys + optional date fixing), and
-the column name it publishes into the enriched input frame.
+## Introspection
 
-```python
-from schenberg.market_data.roles import market_role, With, bind
+Because formulas are symbolic, Schenberg can inspect the same declaration in
+multiple ways:
 
-ForwardRate = (
-    market_role("forward_rate")
-    .read("curves", "forward_rate")
-    .by(indexer="id_indexador", payment_days="tenor_days")
-)
+- `graph.formulas()` and `graph.formula_of("term")` render LaTeX from the IR.
+- `graph.explain(view="output")` reports inputs, formulas, and returns.
+- `graph.to_mermaid(math_labels=True)` draws dependencies.
+- `graph.info(view="output")`, `graph.required_inputs(...)`, and
+  `graph.topological_order()` expose structured graph metadata.
 
-class MyInput(With[ForwardRate]):
-    instrument_id: str
-    indexer: str
-    payment_days: int
-    strike: float
-    # forward_rate: float  ← added by bind()
-```
+## Market data boundary
 
-`bind(trades, snapshot, MyInput)` discovers the `With[...]` mixins on
-`MyInput` via `roles_of()`, runs each role's join against the snapshot, then
-projects and validates against the schema. The pricing graph never sees the
-snapshot.
-
-## Pricing boundary
-
-Pure pricing functions return own-currency values only. They do not read book
-columns, position side, quantity, legal entity, reporting currency, or reported
-MTM.
-
-The public pricers:
-
-```python
-from schenberg.pricing.api import price_forward, price_energy_forward
-```
-
-Generic and energy forwards share the same formula graph — the specialisation
-is entirely in which market roles they declare.
+Use `market_role(...).read(...).by(...)` and `With[role]` mixins on an input
+schema. `bind(raw_trades, market_snapshot, InputSchema)` performs the joins and
+returns an enriched lazy frame with market columns available as ordinary inputs.
+Fixing rules, including custom date keys, also live at this boundary.
 
 ## Position boundary
 
-The position layer consumes already-valued instruments:
+Pricing graphs are pure instrument functions: no `side`, no `long_short`, no
+pay/receive sign. Direction, quantity, reporting FX, and book aggregation belong
+to `PositionView`, reusable position measures, and `Fold` rollups.
 
-- `InstrumentValue.value` is in `InstrumentValue.currency`.
-- `Position.side * Position.quantity` creates exposure.
-- `BookContract.reporting_currency` and `ReportingFx.book_fx` convert reported
-  MTM (`reported_mtm = mtm / book_fx`).
+## Examples and HTML
 
-```python
-from schenberg.position import position_value, position_risk, book_value_rollup
-
-# Lift one InstrumentValue onto a Position + Book + FX context
-pv = position_value(positions, value=values, book=book, fx=fx)
-
-# Lift InstrumentRisk (per-unit Greeks) onto positions
-pr = position_risk(positions, risk=risk)
-
-# Roll up to book level
-rollup = book_value_rollup.compute(pv)
-```
-
-Aggregation (`Fold`) is a *later* layer than the position view and is never
-part of it.
-
-## Expression IR
-
-All formula terms are `Expr` nodes from `schenberg.core.expr`. The same tree
-is interpreted in three ways:
-
-- **Polars** — `compile_polars(expr)` → `pl.Expr` (lazy execution).
-- **Numeric** — `compile_numeric(expr, bindings)` → `float` (point evaluation).
-- **LaTeX** — `to_latex(expr)` → `str` (human-readable math).
-
-An analytic derivative is available via JAX when installed:
-`grad(expr, "forward_rate")` produces the partial derivative as another `Expr`.
-
-## Shocks and scenarios
-
-A `Shock` is a pure `MarketSnapshot → MarketSnapshot` endomorphism. It never
-mutates the original. `Shock.compose(*shocks)` chains them associatively:
-
-```python
-from schenberg.market_data.shocks import curve_parallel_shift
-from schenberg.market_data.path import MarketPath
-
-bump = curve_parallel_shift(source="curves", column="risk_free_rate", shift=0.01)
-stressed = market.apply(bump)          # new snapshot, original untouched
-```
+Instrument-specific example pricers live in `docs/examples` as self-contained
+notebooks/scripts that use the public Schenberg API. They are exported directly
+with `marimo export html`; no shell export wrapper is needed.

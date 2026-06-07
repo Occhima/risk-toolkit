@@ -1,26 +1,8 @@
-"""Public pricing layer: forward and energy-forward pricers.
+"""Pricing namespace.
 
-All public pricers live in :mod:`schenberg.pricing.api`. This package
-re-exports the most-used names so ``from schenberg.pricing import price_forward``
-works alongside the full import path.
+Schenberg no longer ships centralised example pricers from this package. Declare
+instrument-specific pricers with the public ``FormulaGraph`` API in application
+code or in ``docs/examples`` so the symbolic graph stays local and inspectable.
 """
 
-from schenberg.pricing.api import (
-    EnergyForwardPricing,
-    ForwardContractPricing,
-    energy_forward_formula,
-    forward_formula,
-    forward_instrument_value,
-    price_energy_forward,
-    price_forward,
-)
-
-__all__ = [
-    "ForwardContractPricing",
-    "EnergyForwardPricing",
-    "forward_formula",
-    "energy_forward_formula",
-    "price_forward",
-    "forward_instrument_value",
-    "price_energy_forward",
-]
+__all__: list[str] = []
