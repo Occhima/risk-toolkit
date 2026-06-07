@@ -220,6 +220,8 @@ def _():
 def _(mo):
     import importlib
 
+    from schenberg_viz import graph_png_url, latex_png_url
+
     vanilla = importlib.import_module("docs.examples.04_vanilla_option")
     trades = vanilla.sample_trades()
     market = vanilla.sample_market()
@@ -229,11 +231,16 @@ def _(mo):
         enriched.with_columns(vanilla.pl.lit("VANILLA_OPTION").alias("instrument_type")),
         view="output",
     )
-    return enriched, market, mo, priced, staged, trades, vanilla
+    graph_url = graph_png_url(vanilla.vanilla_option_graph, math_labels=True)
+    formula_cards = [
+        mo.vstack([mo.md(f"**{name}**"), mo.image(latex_png_url(formula), alt=formula)])
+        for name, formula in vanilla.vanilla_option_graph.formulas().items()
+    ]
+    return enriched, formula_cards, graph_url, market, mo, priced, staged, trades, vanilla
 
 
 @app.cell(hide_code=True)
-def _(mo, priced, staged, vanilla):
+def _(formula_cards, graph_url, mo, priced, staged, vanilla):
     mo.vstack(
         [
             mo.md(
@@ -241,16 +248,15 @@ def _(mo, priced, staged, vanilla):
                 + vanilla.vanilla_option_graph.explain(view="output")
                 + "\n```"
             ),
+            mo.md("## Grafo de pricing renderizado (PNG)"),
+            mo.image(graph_url, alt="Vanilla option pricing graph", width="100%"),
             mo.md(
-                "## Mermaid\n```text\n"
+                "## Mermaid fonte (debug)\n```text\n"
                 + vanilla.vanilla_option_graph.to_mermaid(math_labels=True)
                 + "\n```"
             ),
-            mo.md(
-                "## Formulas\n```text\n"
-                + "\n".join(vanilla.vanilla_option_graph.formulas().values())
-                + "\n```"
-            ),
+            mo.md("## Fórmulas renderizadas como PNG"),
+            mo.vstack(formula_cards),
             mo.md("## Stage"),
             mo.ui.table(
                 staged.select("instrument_id", "d1", "d2", "call_value", "put_value").collect()

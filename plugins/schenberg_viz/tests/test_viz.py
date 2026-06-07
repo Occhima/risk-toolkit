@@ -4,7 +4,16 @@ import polars as pl
 from schenberg.pricing import ForwardInput, forward_formula
 
 from schenberg_distributed import ValuationPlan
-from schenberg_viz import graph_report, stage_preview, to_html, to_markdown, to_mermaid
+from schenberg_viz import (
+    graph_png_url,
+    graph_report,
+    latex_png_url,
+    mermaid_png_url,
+    stage_preview,
+    to_html,
+    to_markdown,
+    to_mermaid,
+)
 
 
 def test_to_mermaid_accepts_forward_formula() -> None:
@@ -62,3 +71,19 @@ def test_stage_preview_limits_rows() -> None:
 def test_to_mermaid_accepts_valuation_plan() -> None:
     plan = ValuationPlan("p").input("x", 1)
     assert "flowchart" in to_mermaid(plan)
+
+
+def test_mermaid_png_url_encodes_diagram() -> None:
+    url = mermaid_png_url("flowchart LR\nA --> B")
+    assert url.startswith("https://mermaid.ink/img/")
+    assert "flowchart" not in url
+
+
+def test_graph_png_url_accepts_forward_formula() -> None:
+    assert graph_png_url(forward_formula, view="output").startswith("https://mermaid.ink/img/")
+
+
+def test_latex_png_url_encodes_expression() -> None:
+    url = latex_png_url(r"PV = FV \times DF")
+    assert url.startswith("https://latex.codecogs.com/png.image?")
+    assert " " not in url
