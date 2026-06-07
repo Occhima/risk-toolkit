@@ -210,7 +210,7 @@ RiskFree = CURVES.zero_rate("BRL_DI", as_="risk_free_rate").source("curves").for
 class VanillaOptionInput(With[Spot], With[Vol], With[RiskFree], SchenbergDataFrameModel):
     ...
 
-enriched = bind(trades, market, VanillaOptionInput)
+enriched = bind[VanillaOptionInput](trades, market)
 priced = option_formula.plan(enriched, view="output")  # LazyFrame
 ```
 

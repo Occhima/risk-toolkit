@@ -67,7 +67,8 @@ multiple ways:
 Use `market_role(...).read(...).by(...)` and `With[role]` mixins on an input
 schema. Semantic helpers such as `CURVES.zero_rate("BRL_DI")` bind that argument
 as a literal quote-side key; dynamic per-row keys remain available with `.by(...)`.
-`bind(raw_trades, market_snapshot, InputSchema)` performs the joins and returns
+`bind(raw_trades, market_snapshot, InputSchema)` (or the typed shorthand
+`bind[InputSchema](raw_trades, market_snapshot)`) performs the joins and returns
 an enriched lazy frame with market columns available as ordinary inputs. It fails
 loudly if a market output would overwrite an existing non-key column. Fixing
 rules, including custom date keys, also live at this boundary.

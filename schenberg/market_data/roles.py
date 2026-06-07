@@ -242,7 +242,7 @@ def roles_of(schema: type[Any]) -> list[MarketRole]:
 # ---- the bind boundary -------------------------------------------------------
 
 
-def bind(
+def _bind(
     raw: pl.LazyFrame | pl.DataFrame,
     snapshot: MarketSnapshot,
     schema: type[Any],
@@ -259,3 +259,42 @@ def bind(
         lf = role.attach(lf, snapshot)
     columns = list(schema.to_schema().columns.keys())
     return schema.validate(lf.select(columns), lazy=True)
+
+
+@dataclass(frozen=True, slots=True)
+class _TypedBind:
+    schema: type[Any]
+
+    def __call__(
+        self,
+        raw: pl.LazyFrame | pl.DataFrame,
+        snapshot: MarketSnapshot,
+    ) -> pl.LazyFrame:
+        return _bind(raw, snapshot, self.schema)
+
+
+class _Bind:
+    """Market-data binder.
+
+    Supports both the original call style, ``bind(raw, snapshot, InputSchema)``,
+    and a typed shorthand, ``bind[InputSchema](raw, snapshot)``.
+    """
+
+    def __call__(
+        self,
+        raw: pl.LazyFrame | pl.DataFrame,
+        snapshot: MarketSnapshot,
+        schema: type[Any] | None = None,
+    ) -> pl.LazyFrame:
+        if schema is None:
+            raise TypeError(
+                "bind() missing schema: use bind(raw, snapshot, InputSchema) "
+                "or bind[InputSchema](raw, snapshot)"
+            )
+        return _bind(raw, snapshot, schema)
+
+    def __getitem__(self, schema: type[Any]) -> _TypedBind:
+        return _TypedBind(schema)
+
+
+bind = _Bind()

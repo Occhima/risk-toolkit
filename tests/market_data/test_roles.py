@@ -4,6 +4,7 @@ from datetime import date
 
 import polars as pl
 import pytest
+from schenberg.core.graph import Formula
 from schenberg.domain.base import SchenbergDataFrameModel
 from schenberg.market_data.date_rules import add_days, same_day
 from schenberg.market_data.roles import (
@@ -151,6 +152,26 @@ def test_bind_joins_curves_and_fixing_and_validates() -> None:
 
 def test_bind_stays_lazy() -> None:
     assert isinstance(bind(_raw(), _snapshot(), ForwardPricingInput), pl.LazyFrame)
+
+
+def test_bind_supports_type_subscript() -> None:
+    enriched = bind[ForwardPricingInput](_raw(), _snapshot()).collect()
+
+    assert set(enriched.columns) == set(ForwardPricingInput.to_schema().columns.keys())
+    assert enriched["forward_price"].to_list() == [5.0, 6.0]
+
+
+def test_formula_bind_uses_contract_type() -> None:
+    formula = Formula[ForwardPricingInput, ForwardPricingInput]("forward")
+    enriched = formula.bind(_raw(), _snapshot()).collect()
+
+    assert set(enriched.columns) == set(ForwardPricingInput.to_schema().columns.keys())
+    assert enriched["risk_free"].to_list() == [0.10, 0.12]
+
+
+def test_bind_without_schema_raises_helpful_error() -> None:
+    with pytest.raises(TypeError, match=r"bind\[InputSchema\]"):
+        bind(_raw(), _snapshot())
 
 
 # ---- snapshot builder --------------------------------------------------------
