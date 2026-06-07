@@ -19,11 +19,22 @@ book roll-ups. Nothing here calls ``collect``.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import StrEnum
 from typing import Any, cast
 
 import polars as pl
 
 from schenberg.core.columns import ColumnLike, RoutePredicate, col_name
+
+
+class AggOp(StrEnum):
+    """The associative reduction an :class:`Agg` performs."""
+
+    SUM = "sum"
+    FIRST = "first"
+    COUNT = "count"
+    LIT = "lit"
+
 
 # A where-clause is either a raw Polars predicate or a schema RoutePredicate
 # (``cols(Schema).leg_role == "ativo"``), which carries a readable label.
@@ -49,7 +60,7 @@ class Agg:
     explain itself in words.
     """
 
-    op: str  # "sum" | "first" | "count" | "lit"
+    op: AggOp
     column: str | None = None
     weight: str | None = None
     where: Where | None = None
@@ -57,9 +68,9 @@ class Agg:
 
     def to_expr(self) -> pl.Expr:
         """Compile to a Polars aggregation expression (used inside ``.agg``)."""
-        if self.op == "count":
+        if self.op is AggOp.COUNT:
             return pl.len()
-        if self.op == "lit":
+        if self.op is AggOp.LIT:
             return pl.lit(self.value)
         assert self.column is not None
         expr = pl.col(self.column)
@@ -67,17 +78,18 @@ class Agg:
             expr = expr * pl.col(self.weight)
         if self.where is not None:
             expr = expr.filter(_where_expr(self.where))
-        if self.op == "sum":
-            return expr.sum()
-        if self.op == "first":
-            return expr.first()
+        match self.op:
+            case AggOp.SUM:
+                return expr.sum()
+            case AggOp.FIRST:
+                return expr.first()
         raise ValueError(f"unknown aggregation op {self.op!r}")
 
     def describe(self) -> str:
         """A short human-readable form, e.g. ``sum(weighted_pv where leg_role == 'ativo')``."""
-        if self.op == "count":
+        if self.op is AggOp.COUNT:
             return "count()"
-        if self.op == "lit":
+        if self.op is AggOp.LIT:
             return f"lit({self.value!r})"
         assert self.column is not None
         inner = self.column
@@ -93,7 +105,7 @@ def sum_(
 ) -> Agg:
     """Sum a column, optionally weighted by another column and/or filtered."""
     return Agg(
-        op="sum",
+        op=AggOp.SUM,
         column=col_name(column),
         weight=col_name(weight) if weight is not None else None,
         where=where,
@@ -102,17 +114,17 @@ def sum_(
 
 def first_(column: ColumnLike) -> Agg:
     """Take the first value of a column within each group (e.g. carry a key)."""
-    return Agg(op="first", column=col_name(column))
+    return Agg(op=AggOp.FIRST, column=col_name(column))
 
 
 def count_() -> Agg:
     """Count the rows in each group."""
-    return Agg(op="count")
+    return Agg(op=AggOp.COUNT)
 
 
 def lit_(value: object) -> Agg:
     """Emit a constant column on every group row (e.g. an instrument type tag)."""
-    return Agg(op="lit", value=value)
+    return Agg(op=AggOp.LIT, value=value)
 
 
 def _as_agg(value: Agg | pl.Expr) -> Agg:

@@ -285,7 +285,7 @@ class FormulaGraph:
                 raise ValueError("pass targets=[...] or view=...")
             targets = list(self._views[view].values())
         order = [name for name in self.topological_order() if name in self._reachable(targets)]
-        self._require_inputs(frame, [v for v in self.required_inputs_for(targets)])
+        self._require_inputs(frame, self.required_inputs_for(targets))
         for name in order:
             frame = frame.with_columns(compile_polars(self._terms[name]).alias(name))
         return frame
@@ -326,7 +326,7 @@ class FormulaGraph:
         needed: set[str] = set()
         for target in targets:
             if target in self._terms:
-                needed |= {v for v in _iter_vars(self._inline(self._terms[target]))}
+                needed |= set(_iter_vars(self._inline(self._terms[target])))
             else:
                 needed.add(target)
         return needed
@@ -341,9 +341,7 @@ class FormulaGraph:
         name = term_name(target)
         if name not in self._terms:
             return set()
-        return {v for v in _iter_vars(self._inline(self._terms[name]))} | (
-            self._reachable([name]) - {name}
-        )
+        return set(_iter_vars(self._inline(self._terms[name]))) | (self._reachable([name]) - {name})
 
     def topological_order(self) -> list[str]:
         order: list[str] = []

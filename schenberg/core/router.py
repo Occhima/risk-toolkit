@@ -14,7 +14,8 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Protocol, TypeVar, cast, runtime_checkable
+from enum import StrEnum
+from typing import Any, Protocol, cast, runtime_checkable
 
 import polars as pl
 
@@ -35,10 +36,16 @@ class Computation(Protocol):
     def view_schema(self, view: str) -> object | None: ...
 
 
-C = TypeVar("C", bound=Computation)
+class RouterMode(StrEnum):
+    """How a router resolves rows that satisfy more than one case."""
 
-EXCLUSIVE = "exclusive"
-FIRST_MATCH = "first_match"
+    EXCLUSIVE = "exclusive"  # cases must partition the rows; duplicates rejected
+    FIRST_MATCH = "first_match"  # priority order; first matching case wins
+
+
+# Backwards-compatible module aliases for the mode values.
+EXCLUSIVE = RouterMode.EXCLUSIVE
+FIRST_MATCH = RouterMode.FIRST_MATCH
 
 
 @dataclass(slots=True)
@@ -63,7 +70,7 @@ class Router:
     route_columns: tuple[ColumnRef, ...]
     branches: list[Branch] = field(default_factory=list)
     fallback: Computation | None = None
-    mode: str = EXCLUSIVE
+    mode: RouterMode = RouterMode.EXCLUSIVE
     contract_view: str | None = None
     contract_schema: object | None = None
     name: str = "router"
@@ -83,21 +90,21 @@ class Router:
         return self
 
     def exclusive(self) -> Router:
-        self.mode = EXCLUSIVE
+        self.mode = RouterMode.EXCLUSIVE
         return self
 
     def first_match(self) -> Router:
-        self.mode = FIRST_MATCH
+        self.mode = RouterMode.FIRST_MATCH
         return self
 
     # ---- registration ----------------------------------------------------
 
-    def default(self, computation: C) -> Router:
+    def default[C: Computation](self, computation: C) -> Router:
         self._check_contract(computation, "default")
         self.fallback = computation
         return self
 
-    def case(self, *values: object) -> Callable[[Callable[[], C]], C]:
+    def case[C: Computation](self, *values: object) -> Callable[[Callable[[], C]], C]:
         """Register a case by value, one per route column (equality predicates).
 
         In :attr:`EXCLUSIVE` mode a duplicate case key is rejected at registration.
@@ -117,19 +124,21 @@ class Router:
         label = ", ".join(str(v) for v in unwrapped)
         return self._register(predicates, key=key, label=label)
 
-    def when(self, *predicates: RoutePredicate | pl.Expr) -> Callable[[Callable[[], C]], C]:
+    def when[C: Computation](
+        self, *predicates: RoutePredicate | pl.Expr
+    ) -> Callable[[Callable[[], C]], C]:
         """Register a case by explicit predicates (supports complex conditions)."""
         label = " & ".join(_predicate_label(p) for p in predicates)
         return self._register(predicates, key=None, label=label)
 
-    def _register(
+    def _register[C: Computation](
         self,
         predicates: tuple[RoutePredicate | pl.Expr, ...],
         *,
         key: tuple[object, ...] | None,
         label: str,
     ) -> Callable[[Callable[[], C]], C]:
-        if self.mode == EXCLUSIVE and key is not None:
+        if self.mode == RouterMode.EXCLUSIVE and key is not None:
             for existing in self.branches:
                 if existing.key == key:
                     raise ValueError(
@@ -181,7 +190,7 @@ class Router:
 
         for branch in self.branches:
             condition = self._and(branch.predicates)
-            selector = condition & ~matched if self.mode == FIRST_MATCH else condition
+            selector = condition & ~matched if self.mode == RouterMode.FIRST_MATCH else condition
             parts.append(branch.computation.plan(frame.filter(selector), view=view))
             matched = matched | condition
 
