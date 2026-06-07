@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
+from typing import cast
 
 import pandera.polars as pa
 import polars as pl
@@ -51,7 +52,7 @@ class VolatilitySurface:
         ref_date: date,
         convention: VolatilityConvention,
     ) -> VolatilitySurface:
-        df = raw.collect() if isinstance(raw, pl.LazyFrame) else raw
+        df = cast(pl.DataFrame, raw.collect()) if isinstance(raw, pl.LazyFrame) else raw
         return cls(name=name, ref_date=ref_date, data=df, convention=convention)
 
     def to_market_source(self) -> MarketSource:

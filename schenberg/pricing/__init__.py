@@ -7,9 +7,6 @@ this namespace exposes the small generic forward helper used by plugin examples.
 
 from __future__ import annotations
 
-import sys
-import types
-
 import polars as pl
 
 from schenberg.core.expr import exp
@@ -30,7 +27,10 @@ RiskFreeRate = (
 )
 
 
-class ForwardInput(With[ForwardRate], With[RiskFreeRate], SchenbergDataFrameModel):
+# ``With[role]`` builds a pandera ``DataFrameModel`` mixin dynamically; ty cannot
+# compute an MRO across pandera's metaclass and flags the base. The pattern is the
+# documented way to declare resolved market columns on an input schema.
+class ForwardInput(With[ForwardRate], With[RiskFreeRate], SchenbergDataFrameModel):  # ty: ignore[unsupported-base]
     instrument_id: str
     indexer: str
     currency: str
@@ -42,18 +42,18 @@ forward_formula = FormulaGraph("forward", input=ForwardInput)
 
 
 @forward_formula.formula(symbol="T")
-def year_fraction(c):
-    return c.payment_days / 252.0
+def year_fraction(payment_days):
+    return payment_days / 252.0
 
 
 @forward_formula.formula(symbol="DF")
-def discount_factor(c, year_fraction):
-    return exp(-c.risk_free_rate * year_fraction)
+def discount_factor(risk_free_rate, year_fraction):
+    return exp(-risk_free_rate * year_fraction)
 
 
 @forward_formula.formula(symbol="FV")
-def future_value(c):
-    return c.forward_rate - c.strike
+def future_value(forward_rate, strike):
+    return forward_rate - strike
 
 
 @forward_formula.formula(symbol="PV")
@@ -82,11 +82,5 @@ def price_forward(trades: pl.LazyFrame, market: MarketSnapshot) -> pl.LazyFrame:
     enriched = bind(trades, market, ForwardInput)
     return forward_formula.plan(enriched, view="output")
 
-
-_compat = types.ModuleType(__name__ + ".api")
-_compat.ForwardInput = ForwardInput
-_compat.forward_formula = forward_formula
-_compat.price_forward = price_forward
-sys.modules[__name__ + ".api"] = _compat
 
 __all__ = ["ForwardInput", "forward_formula", "price_forward"]

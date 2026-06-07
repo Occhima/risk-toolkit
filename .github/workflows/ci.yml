@@ -40,7 +40,7 @@ jobs:
 
       - name: typecheck
         if: matrix.job == 'typecheck'
-        run: uv run ty check
+        run: uv run ty check schenberg
 
       - name: test
         if: matrix.job == 'test'

@@ -102,7 +102,7 @@ environment = { python-version = "3.12" }
 test = "pytest"
 lint = "ruff check ."
 format = "ruff format ."
-typecheck = "ty check schenberg/core/graph.py"
+typecheck = "ty check schenberg"
 check = ["lint", "typecheck", "test"]
 integration = "pytest tests/integration -m 'not performance'"
 docs-build = "mkdocs build"

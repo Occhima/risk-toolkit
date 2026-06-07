@@ -67,11 +67,19 @@ class SchenbergDataFrameModel(ContractAdapterMixin, pa.DataFrameModel):
                 cls.resolve(check_obj), head, tail, sample, random_state, lazy, inplace
             )
 
-        schema.validate = _resolve_then_validate
+        # Wrap the compiled schema's bound ``validate`` so contract rules run
+        # first. ty cannot model reassigning an instance method attribute on a
+        # pandera schema; the runtime behaviour is exercised by the contract-rule
+        # tests.
+        schema.validate = _resolve_then_validate  # ty: ignore[invalid-assignment]
         return schema
 
     @classmethod
-    def validate(cls, check_obj: pl.LazyFrame, *args: Any, **kwargs: Any) -> pl.LazyFrame:
+    def validate(cls, check_obj: Any, *args: Any, **kwargs: Any) -> pl.LazyFrame:  # ty: ignore[invalid-method-override]
+        # pandera's ``validate`` is generic over the polars frame type and accepts
+        # either a ``LazyFrame`` or a ``DataFrame``; we always resolve contract
+        # rules first and return a ``LazyFrame``. ty flags the deliberate narrowing
+        # of pandera's generic return type — it is intentional, not a bug.
         return super().validate(cls.resolve(check_obj), *args, **kwargs)
 
     class Config:
