@@ -3,7 +3,7 @@ title: "Black-Scholes option — price, Greeks, and one vectorized grid"
 subtitle: "The same symbolic graph prices a book and sweeps a spot ladder"
 ---
 
-This notebook builds a European Black-Scholes pricer as a `FormulaGraph`, prices
+This notebook builds a European Black-Scholes pricer as a typed `Formula[OptionInput, OptionOutput]`, prices
 a tiny book of a call and a put with **semantic market roles**, and then reuses
 *the very same graph* to sweep a 300-point spot ladder — no rewrite, no loop,
 just one lazy Polars plan over a wider frame.
@@ -17,7 +17,7 @@ import matplotlib.pyplot as plt
 from datetime import date
 
 from schenberg import (
-    CURVES, FIXINGS, VOLS, FormulaGraph, MarketSnapshot,
+    CURVES, FIXINGS, VOLS, Formula, MarketSnapshot,
     SchenbergDataFrameModel, With, bind, exp, log, normal_cdf, normal_pdf, sqrt, where,
 )
 from schenberg_quarto import show_formulas, show_graph
@@ -53,12 +53,28 @@ class OptionInput(With[Spot], With[RiskFree], With[Vol], SchenbergDataFrameModel
     strike: float
     time_to_maturity: float
     payment_days: int
+
+
+class OptionOutput(SchenbergDataFrameModel):
+    instrument_id: str
+    option_type: str
+    value: float
+    delta: float
+    gamma: float
+    vega: float
+
+
+class OptionGreeks(SchenbergDataFrameModel):
+    value: float
+    delta: float
+    gamma: float
+    vega: float
 ```
 
 ## 2. The Black-Scholes graph, in headless formulas
 
 ```{python}
-g = FormulaGraph("vanilla_option", input=OptionInput)
+g = Formula[OptionInput, OptionOutput]("vanilla_option")
 
 
 @g.formula(symbol="d_1")
@@ -107,6 +123,7 @@ def vega(spot, time_to_maturity, d1):
 
 g.returns(
     "output",
+    OptionOutput,
     instrument_id="instrument_id",
     option_type="option_type",
     value="value",
@@ -114,6 +131,7 @@ g.returns(
     gamma="gamma",
     vega="vega",
 )
+g.returns("greeks", OptionGreeks, value="value", delta="delta", gamma="gamma", vega="vega")
 ```
 
 The math, derived from the IR:
@@ -182,7 +200,7 @@ and call − put = S − K·e^(−rT) is put-call parity — a good first sanity
 The graph is just a pure function of its columns. If we hand it a frame that
 *already* has `spot`, `strike`, … (no `bind` needed), it sweeps the whole ladder
 in one shot. We ask only for the `value`/`delta`/`gamma`/`vega` terms via an
-explicit `outputs=` mapping.
+typed `greeks` view.
 
 ```{python}
 S = np.linspace(60.0, 140.0, 300)
@@ -197,10 +215,7 @@ grid = pl.DataFrame(
     }
 ).lazy()
 
-swept = g.plan(
-    grid,
-    outputs={"value": "value", "delta": "delta", "gamma": "gamma", "vega": "vega"},
-).collect()
+swept = g.plan(grid, view="greeks").collect()
 
 fig, ax = plt.subplots(2, 2, figsize=(9, 6), constrained_layout=True)
 ax[0, 0].plot(S, swept["value"], color="#2563eb"); ax[0, 0].set_title("Call value")

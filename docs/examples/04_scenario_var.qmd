@@ -18,7 +18,7 @@ import polars as pl
 import matplotlib.pyplot as plt
 
 from schenberg import (
-    FormulaGraph, MarketSnapshot, MarketPath, With, bind, exp, market_role,
+    Formula, MarketSnapshot, MarketPath, With, bind, exp, market_role,
     Scenario, ScenarioSet, reprice_under,
 )
 from schenberg.domain.base import SchenbergDataFrameModel
@@ -50,7 +50,12 @@ class FwdInput(With[Fwd], With[Disc], SchenbergDataFrameModel):
     payment_days: int
 
 
-g = FormulaGraph("fwd_book", input=FwdInput)
+class FwdOutput(SchenbergDataFrameModel):
+    instrument_id: str
+    value: float
+
+
+g = Formula[FwdInput, FwdOutput]("fwd_book")
 
 
 @g.formula(symbol="T")
@@ -68,7 +73,7 @@ def value(forward_rate, strike, notional, discount_factor):
     return notional * (forward_rate - strike) * discount_factor
 
 
-g.returns("output", instrument_id="instrument_id", value="value")
+g.returns("output", FwdOutput, instrument_id="instrument_id", value="value")
 
 
 def price_book(trades: pl.LazyFrame, market: MarketSnapshot) -> pl.LazyFrame:

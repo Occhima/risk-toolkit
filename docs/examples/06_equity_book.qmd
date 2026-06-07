@@ -23,7 +23,7 @@ import pandera.polars as pa
 import polars as pl
 
 from schenberg import (
-    Fold, FormulaGraph, MarketPath, MarketSnapshot, PositionView, Router,
+    Fold, Formula, MarketPath, MarketSnapshot, PositionView, Router,
     Scenario, ScenarioSet, With, abs_, bind, exp, log, market_role, normal_cdf,
     reprice_under, sqrt, sum_,
 )
@@ -102,10 +102,10 @@ class InstrumentMark(SchenbergDataFrameModel):
 A cash equity is worth its price; a call is worth its Black–Scholes value, built
 from the symbolic `Expr` IR (`log`, `exp`, `sqrt`, `normal_cdf`) so the rendered
 formula below is *derived from the code that runs*, never transcribed by hand.
-Both graphs `returns(...)` the same `InstrumentMark` contract.
+Both typed formulas are declared as `Formula[PriceInput, InstrumentMark]` and `returns(...)` the same `InstrumentMark` contract.
 
 ```{python}
-equity_g = FormulaGraph("cash_equity", input=PriceInput)
+equity_g = Formula[PriceInput, InstrumentMark]("cash_equity")
 
 
 @equity_g.formula(symbol="V")
@@ -120,7 +120,7 @@ def delta():
 
 equity_g.returns("result", InstrumentMark, value="value", delta="delta")
 
-call_g = FormulaGraph("vanilla_call", input=PriceInput)
+call_g = Formula[PriceInput, InstrumentMark]("vanilla_call")
 
 
 @call_g.formula(symbol="d_1")
@@ -165,12 +165,12 @@ pricer = Router.on(PI.asset_class, name="equity_pricer").returns("result", Instr
 
 
 @pricer.case("EQUITY")
-def _equity_branch() -> FormulaGraph:
+def _equity_branch() -> Formula:
     return equity_g
 
 
 @pricer.case("CALL")
-def _call_branch() -> FormulaGraph:
+def _call_branch() -> Formula:
     return call_g
 
 

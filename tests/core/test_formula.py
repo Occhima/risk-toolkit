@@ -69,6 +69,8 @@ def test_latex_is_derived_from_formula() -> None:
     f = _forward()
     latex = f.to_latex("present_value")
     assert latex.startswith("PV = ")
+    assert f.formula_of("present_value") == latex
+    assert f.formulas()["present_value"] == latex
 
 
 def test_topological_order_is_dependency_sound() -> None:
@@ -81,3 +83,10 @@ def test_self_reference_rejected() -> None:
     f = Formula[ForwardPricingInput, ForwardPricing]("bad")
     with pytest.raises(ValueError, match="references itself"):
         f.let("loop", var("loop") + 1.0)
+
+
+def test_mermaid_includes_formula_type_and_outputs() -> None:
+    diagram = _forward().to_mermaid()
+    assert "Formula[ForwardPricingInput, ForwardPricing]" in diagram
+    assert 'future_value --> future_value_out["future_value"]' in diagram
+    assert 'present_value --> present_value_out["present_value"]' in diagram

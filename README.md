@@ -19,7 +19,7 @@ the caller collects.
 from datetime import date
 import polars as pl
 
-from schenberg import FormulaGraph, MarketSnapshot, With, bind, exp, market_role
+from schenberg import Formula, MarketSnapshot, With, bind, exp, market_role
 from schenberg.domain.base import SchenbergDataFrameModel
 
 ForwardRate = (
@@ -40,7 +40,15 @@ class ForwardInput(With[ForwardRate], With[RiskFreeRate], SchenbergDataFrameMode
     strike: float
     payment_days: int
 
-g = FormulaGraph("forward", input=ForwardInput)
+class ForwardOutput(SchenbergDataFrameModel):
+    instrument_id: str
+    future_value: float
+    present_value: float
+    value: float
+    delta: float
+    currency: str
+
+g = Formula[ForwardInput, ForwardOutput]("forward")
 
 @g.formula(symbol="T")
 def year_fraction(payment_days):
@@ -64,6 +72,7 @@ def delta(discount_factor):
 
 g.returns(
     "output",
+    ForwardOutput,
     instrument_id="instrument_id",
     future_value="future_value",
     present_value="present_value",
@@ -114,10 +123,10 @@ definition time. The legacy namespace names `c`, `contract`, `input` and
 The decorated function returns Schenberg `Expr` nodes, not opaque Python UDFs, so
 introspection and compilation still work:
 
-- `graph.formulas()` and `graph.formula_of(...)` derive LaTeX from the symbolic IR.
-- `graph.explain(...)`, `graph.to_mermaid(...)`, `graph.info(...)`, and
-  `graph.stage(...)` remain available.
-- `graph.plan(...)` compiles to lazy Polars expressions and does not call
+- `formula.formulas()` and `formula.formula_of(...)` derive LaTeX from the symbolic IR.
+- `formula.explain(...)`, `formula.to_mermaid(...)`, `formula.info(...)`, and
+  `formula.stage(...)` remain available.
+- `formula.plan(...)` compiles to lazy Polars expressions and does not call
   `.collect()`.
 - `g.let(...)` remains the lower-level primitive for manually registering a term.
 
@@ -178,14 +187,14 @@ uv run poe check
 
 ## Semantic market roles and option example
 
-`FormulaGraph` sees only resolved parameters. Semantic helpers such as `CURVES`,
+`Formula[Input, Output]` sees only resolved parameters. Semantic helpers such as `CURVES`,
 `FIXINGS`, and `VOLS` build `MarketRole` declarations outside the graph; `bind(...)`
-uses those roles to enrich a trade frame, and `graph.plan(...)` prices lazily.
+uses those roles to enrich a trade frame, and `formula.plan(...)` prices lazily.
 Pandera validation belongs at public pricer/schema boundaries (for example via
 `@price_function`), not inside formula math.
 
 ```python
-from schenberg import CURVES, FIXINGS, VOLS, FormulaGraph, With, bind
+from schenberg import CURVES, FIXINGS, VOLS, Formula, With, bind
 
 Spot = FIXINGS.value("USD/BRL", as_="spot").source("fixings")
 Vol = (
@@ -202,7 +211,7 @@ class VanillaOptionInput(With[Spot], With[Vol], With[RiskFree], SchenbergDataFra
     ...
 
 enriched = bind(trades, market, VanillaOptionInput)
-priced = option_graph.plan(enriched, view="output")  # LazyFrame
+priced = option_formula.plan(enriched, view="output")  # LazyFrame
 ```
 
 See `docs/examples/02_vanilla_option.qmd` for Black-Scholes price/Greeks and

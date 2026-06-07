@@ -10,7 +10,7 @@ from __future__ import annotations
 import polars as pl
 
 from schenberg.core.expr import exp
-from schenberg.core.graph import FormulaGraph
+from schenberg.core.graph import Formula
 from schenberg.domain.base import SchenbergDataFrameModel
 from schenberg.market_data.roles import With, bind, market_role
 from schenberg.market_data.snapshot import MarketSnapshot
@@ -38,7 +38,16 @@ class ForwardInput(With[ForwardRate], With[RiskFreeRate], SchenbergDataFrameMode
     payment_days: int
 
 
-forward_formula = FormulaGraph("forward", input=ForwardInput)
+class ForwardOutput(SchenbergDataFrameModel):
+    instrument_id: str
+    future_value: float
+    present_value: float
+    value: float
+    delta: float
+    currency: str
+
+
+forward_formula = Formula[ForwardInput, ForwardOutput]("forward")
 
 
 @forward_formula.formula(symbol="T")
@@ -68,6 +77,7 @@ def delta(discount_factor):
 
 forward_formula.returns(
     "output",
+    ForwardOutput,
     instrument_id="instrument_id",
     future_value="future_value",
     present_value="present_value",
@@ -83,4 +93,4 @@ def price_forward(trades: pl.LazyFrame, market: MarketSnapshot) -> pl.LazyFrame:
     return forward_formula.plan(enriched, view="output")
 
 
-__all__ = ["ForwardInput", "forward_formula", "price_forward"]
+__all__ = ["ForwardInput", "ForwardOutput", "forward_formula", "price_forward"]

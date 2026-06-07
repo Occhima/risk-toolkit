@@ -458,18 +458,38 @@ class FormulaGraph:
                 out.append((dep, name))
         return out
 
-    def to_mermaid(self, *, math_labels: bool = False, view: str | None = None) -> str:
+    def to_mermaid(
+        self,
+        *,
+        math_labels: bool = False,
+        view: str | None = None,
+        type_label: str | None = None,
+    ) -> str:
         lines = ["flowchart LR"]
+        if type_label is not None:
+            lines.append(f'    __formula_type__["{self._mermaid_label(type_label)}"]')
         for a, b in self.edges():
             if math_labels:
                 la, lb = self._label(a), self._label(b)
-                lines.append(f'    {a}["{la}"] --> {b}["{lb}"]')
+                lines.append(
+                    f'    {a}["{self._mermaid_label(la)}"] --> {b}["{self._mermaid_label(lb)}"]'
+                )
             else:
                 lines.append(f"    {a} --> {b}")
+        if view is not None and view in self._views:
+            for output, source in self._views[view].items():
+                if output == source:
+                    lines.append(f'    {source} --> {output}_out["{self._mermaid_label(output)}"]')
+                else:
+                    lines.append(f'    {source} --> {output}["{self._mermaid_label(output)}"]')
         return "\n".join(lines)
 
     def _label(self, name: str) -> str:
-        return self.formula_of(name).replace('"', "'") if name in self._terms else name
+        return self.formula_of(name) if name in self._terms else name
+
+    @staticmethod
+    def _mermaid_label(label: str) -> str:
+        return label.replace('"', "'")
 
     def explain(self, target: str | None = None, *, view: str | None = None) -> str:
         if target is None and view is None:
@@ -611,6 +631,15 @@ class Formula:
             return planned
         return planned.select(list(cast(Any, schema).to_schema().columns.keys()))
 
+    def stage(
+        self,
+        frame: pl.LazyFrame,
+        *,
+        view: str = _OUTPUT_VIEW,
+        targets: list[str] | None = None,
+    ) -> pl.LazyFrame:
+        return self._g.stage(frame, view=view, targets=targets)
+
     def has_view(self, view: str) -> bool:
         return self._g.has_view(view)
 
@@ -622,10 +651,25 @@ class Formula:
         return self._g.explain(view=view, **kwargs)
 
     def to_mermaid(self, *, view: str = _OUTPUT_VIEW, **kwargs: Any) -> str:
+        kwargs.setdefault("type_label", self._type_label(view))
         return self._g.to_mermaid(view=view, **kwargs)
 
-    def to_latex(self, target: str | Expr) -> str:
+    def _type_label(self, view: str) -> str:
+        contract = (
+            getattr(self._contract, "__name__", "Input") if self._contract is not None else "Input"
+        )
+        schema = self._g.view_schema(view) or self._output
+        output = getattr(schema, "__name__", "Output") if schema is not None else "Output"
+        return f"Formula[{contract}, {output}]"
+
+    def formula_of(self, target: str | Expr) -> str:
         return self._g.formula_of(target)
+
+    def formulas(self) -> dict[str, str]:
+        return self._g.formulas()
+
+    def to_latex(self, target: str | Expr) -> str:
+        return self.formula_of(target)
 
     def info(self, *, view: str = _OUTPUT_VIEW) -> GraphInfo:
         return self._g.info(view=view)
