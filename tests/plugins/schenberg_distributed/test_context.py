@@ -59,3 +59,11 @@ def test_custom_backend_hook_receives_collect_kwargs() -> None:
 
     assert result["value"].to_list() == [1]
     assert seen == {"engine": "auto"}
+
+
+def test_collect_pricing_local_collects_lazyframe() -> None:
+    lf = pl.DataFrame({"x": [1]}).lazy().select((pl.col("x") + 41).alias("value"))
+
+    out = collect_pricing(lf, context=PricingExecutionContext.local())
+
+    assert out["value"].to_list() == [42]

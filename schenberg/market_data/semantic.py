@@ -62,7 +62,7 @@ class _Curves:
     def zero_rate(self, curve: str | None = None, *, as_: str = "zero_rate") -> SemanticRole:
         role = market_role(as_).read("curves", "zero_rate")
         if curve is not None:
-            role = role.by(curve="curve")
+            role = role.by_literal(curve=curve)
         return SemanticRole(role)
 
     def discount_factor(
@@ -70,7 +70,7 @@ class _Curves:
     ) -> SemanticRole:
         role = market_role(as_).read("curves", "discount_factor")
         if curve is not None:
-            role = role.by(curve="curve")
+            role = role.by_literal(curve=curve)
         return SemanticRole(role)
 
     factor = discount_factor
@@ -81,7 +81,7 @@ class _Fixings:
     def value(self, name: str | None = None, *, as_: str = "fixing") -> SemanticRole:
         role = market_role(as_).read("fixings", "value")
         if name is not None:
-            role = role.by(currency_pair="currency_pair")
+            role = role.by_literal(currency_pair=name)
         return SemanticRole(role)
 
 
@@ -90,7 +90,7 @@ class _Vols:
     def implied(self, name: str | None = None, *, as_: str = "vol") -> SemanticRole:
         role = market_role(as_).read("vol_surface", "implied_vol")
         if name is not None:
-            role = role.by(currency_pair="currency_pair")
+            role = role.by_literal(currency_pair=name)
         return SemanticRole(role)
 
 

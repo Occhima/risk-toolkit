@@ -73,3 +73,61 @@ def test_validation_happens_at_snapshot_construction_only(monkeypatch: pytest.Mo
     snap.source("curves")
     snap.source("curves")
     assert calls == 1
+
+
+def test_snapshot_build_default_skips_unique_key_validation() -> None:
+    market = (
+        MarketSnapshot.at(date(2026, 6, 6))
+        .source(
+            "curves",
+            pl.DataFrame(
+                {
+                    "curve": ["BRL_DI", "BRL_DI"],
+                    "tenor_days": [252, 252],
+                    "zero_rate": [0.10, 0.11],
+                }
+            ),
+            unique_by=("curve", "tenor_days"),
+        )
+        .build()
+    )
+    assert isinstance(market, MarketSnapshot)
+
+
+def test_snapshot_build_validate_true_detects_duplicates() -> None:
+    with pytest.raises(DuplicateMarketKeyError):
+        (
+            MarketSnapshot.at(date(2026, 6, 6))
+            .source(
+                "curves",
+                pl.DataFrame(
+                    {
+                        "curve": ["BRL_DI", "BRL_DI"],
+                        "tenor_days": [252, 252],
+                        "zero_rate": [0.10, 0.11],
+                    }
+                ),
+                unique_by=("curve", "tenor_days"),
+            )
+            .build(validate=True)
+        )
+
+
+def test_market_validate_detects_duplicates_after_build() -> None:
+    market = (
+        MarketSnapshot.at(date(2026, 6, 6))
+        .source(
+            "curves",
+            pl.DataFrame(
+                {
+                    "curve": ["BRL_DI", "BRL_DI"],
+                    "tenor_days": [252, 252],
+                    "zero_rate": [0.10, 0.11],
+                }
+            ),
+            unique_by=("curve", "tenor_days"),
+        )
+        .build()
+    )
+    with pytest.raises(DuplicateMarketKeyError):
+        market.validate()

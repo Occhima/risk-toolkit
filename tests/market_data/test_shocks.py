@@ -88,3 +88,31 @@ def test_market_path_set_eagerly_modifies() -> None:
 
     assert _zero_rate(stressed) == pytest.approx(0.20)
     assert _zero_rate(market) == pytest.approx(0.10)
+
+
+def test_shock_preserves_market_source_metadata() -> None:
+    market = (
+        MarketSnapshot.at(date(2026, 6, 6))
+        .source(
+            "curves",
+            pl.DataFrame(
+                {
+                    "curve": ["BRL_DI"],
+                    "tenor_days": [252],
+                    "zero_rate": [0.10],
+                }
+            ),
+            unique_by=("curve", "tenor_days"),
+        )
+        .build(validate=False)
+    )
+
+    shocked = MarketPath("curves").column("zero_rate").modify(lambda r: r + 0.01)(market)
+
+    assert shocked.source("curves").name == market.source("curves").name
+    assert shocked.source("curves").schema == market.source("curves").schema
+    assert shocked.source("curves").unique_by == ("curve", "tenor_days")
+    assert market.source("curves").unique_by == ("curve", "tenor_days")
+
+    out = shocked.source("curves").data.collect()
+    assert out["zero_rate"][0] == pytest.approx(0.11)

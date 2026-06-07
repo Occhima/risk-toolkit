@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 import importlib
-from typing import Any, cast
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, cast
 
 import polars as pl
+
+if TYPE_CHECKING:
+    from schenberg.market_data.snapshot import MarketSnapshot
 
 from .context import PricingExecutionContext
 from .plan import ValuationPlan
@@ -33,6 +38,30 @@ def _run_function(fn: Any, kwargs: dict[str, Any]) -> Any:
 def _run_concat(frames: list[Any], how: str) -> pl.DataFrame:
     normalized = [_materialize(frame) for frame in frames]
     return cast(pl.DataFrame, pl.concat(normalized, how=how))
+
+
+@dataclass(frozen=True, slots=True)
+class PartitionedPricingPlan:
+    """Partitioned whole-frame pricing plan.
+
+    The pricer is invoked once per eager DataFrame partition and each result is
+    materialized explicitly. This distributes/coarsens by partition only; it does
+    not split one Polars lazy query internally.
+    """
+
+    pricer: Callable[[pl.LazyFrame, MarketSnapshot], pl.LazyFrame]
+    partition_by: tuple[str, ...]
+
+
+def collect_partitioned_local(
+    trades: pl.DataFrame,
+    market: MarketSnapshot,
+    plan: PartitionedPricingPlan,
+) -> pl.DataFrame:
+    """Collect a pricer once per eager trade partition and concatenate results."""
+    parts = trades.partition_by(list(plan.partition_by), as_dict=True)
+    frames = [plan.pricer(part.lazy(), market).collect() for part in parts.values()]
+    return pl.concat(frames, how="vertical_relaxed")
 
 
 class LocalExecutor:
@@ -76,7 +105,12 @@ class LocalExecutor:
 
 
 class DaskExecutor:
-    """Optional Dask executor; each valuation node becomes one delayed task."""
+    """Optional Dask executor; each whole valuation node becomes one delayed task.
+
+    LazyFrames produced inside delayed tasks are materialized at task boundaries.
+    Effective distribution depends on user-defined nodes or partitions being
+    coarse enough; this does not distribute one Polars lazy plan internally.
+    """
 
     def __init__(self, context: PricingExecutionContext | None = None) -> None:
         self.context = context or PricingExecutionContext.local()

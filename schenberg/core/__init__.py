@@ -16,7 +16,7 @@ from schenberg.core.expr import (
     var,
     where,
 )
-from schenberg.core.fold import Agg, Fold, count_, first_, lit_, sum_
+from schenberg.core.fold import Agg, Fold, count_, first_, lit_, strict_sum_, sum_
 from schenberg.core.graph import Formula, FormulaGraph, GraphInfo, TermMeta
 from schenberg.core.market import MarketDependency, MarketRequirement
 from schenberg.core.router import Router
@@ -46,6 +46,7 @@ __all__ = [
     "log",
     "sqrt",
     "sum_",
+    "strict_sum_",
     "to_latex",
     "var",
     "where",

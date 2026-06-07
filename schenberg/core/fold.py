@@ -10,7 +10,7 @@ is fully inspectable (:meth:`explain`, :meth:`info`, :meth:`to_mermaid`) — not
 opaque expression.
 
 A fold is monoidal: each output is the reduction of a column under an associative
-operation (sum, first, count), optionally weighted or filtered, with the empty
+operation (sum, strict_sum, first, count), optionally weighted or filtered, with the empty
 group as the unit. The same :class:`Fold` powers both structured-instrument
 aggregation and portfolio /
 book roll-ups. Nothing here calls ``collect``.
@@ -31,6 +31,7 @@ class AggOp(StrEnum):
     """The associative reduction an :class:`Agg` performs."""
 
     SUM = "sum"
+    STRICT_SUM = "strict_sum"
     FIRST = "first"
     COUNT = "count"
     LIT = "lit"
@@ -81,6 +82,12 @@ class Agg:
         match self.op:
             case AggOp.SUM:
                 return expr.sum()
+            case AggOp.STRICT_SUM:
+                return (
+                    pl.when(expr.null_count() > 0)
+                    .then(pl.lit(None, dtype=pl.Float64))
+                    .otherwise(expr.sum())
+                )
             case AggOp.FIRST:
                 return expr.first()
         raise ValueError(f"unknown aggregation op {self.op!r}")
@@ -106,6 +113,18 @@ def sum_(
     """Sum a column, optionally weighted by another column and/or filtered."""
     return Agg(
         op=AggOp.SUM,
+        column=col_name(column),
+        weight=col_name(weight) if weight is not None else None,
+        where=where,
+    )
+
+
+def strict_sum_(
+    column: ColumnLike, *, weight: ColumnLike | None = None, where: Where | None = None
+) -> Agg:
+    """Sum a column, returning null if any contributing row is null."""
+    return Agg(
+        op=AggOp.STRICT_SUM,
         column=col_name(column),
         weight=col_name(weight) if weight is not None else None,
         where=where,

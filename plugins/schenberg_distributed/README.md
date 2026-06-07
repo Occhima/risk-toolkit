@@ -38,8 +38,12 @@ never executes the decorated function.
 - `LocalExecutor.collect(plan, target=...)` materializes the final target through
   `PricingExecutionContext`.
 - `DaskExecutor.collect(plan, target=...)` is an optional MVP executor using
-  `dask.delayed`, one task per valuation node. Install with
-  `schenberg-distributed[dask]`.
+  `dask.delayed`, one task per whole valuation node. It only helps when
+  user-defined nodes/partitions are coarse enough; it does not distribute one
+  Polars `LazyFrame` query internally. Install with `schenberg-distributed[dask]`.
+- `PartitionedPricingPlan` plus `collect_partitioned_local(...)` is an explicit
+  helper for eager trade partitions: the same pricer is collected per partition
+  and concatenated.
 
 ## Existing pricing contexts
 
@@ -52,4 +56,7 @@ context = PricingExecutionContext.local(engine="streaming")
 result = collect_pricing(lazy_pricing_frame, context=context)
 ```
 
-Ray support is optional via `schenberg-distributed[ray]`.
+Ray support is optional via `schenberg-distributed[ray]`. The built-in Ray
+context initializes Ray before handing the `LazyFrame` to local Polars
+`collect`; register a custom backend if you need different materialization
+behavior.

@@ -29,7 +29,7 @@ from schenberg.core.expr import (
     var,
     where,
 )
-from schenberg.core.fold import Fold, count_, first_, lit_, sum_
+from schenberg.core.fold import Fold, count_, first_, lit_, strict_sum_, sum_
 from schenberg.core.graph import Formula, FormulaGraph
 from schenberg.core.market import MarketDependency, MarketRequirement
 from schenberg.core.router import Router
@@ -48,7 +48,14 @@ from schenberg.market_data.snapshot import MarketSnapshot
 from schenberg.market_data.sources import MarketSource
 from schenberg.position import PositionView
 from schenberg.risk import Scenario, ScenarioSet, reprice_under
-from schenberg.structure import StructureLeg, structure_value
+from schenberg.structure import (
+    StructureLeg,
+    StructureLegValue,
+    StructureValue,
+    structure_stage,
+    structure_value,
+    structure_value_fold,
+)
 
 __all__ = [
     # the pricing language
@@ -96,11 +103,16 @@ __all__ = [
     "first_",
     "lit_",
     "sum_",
+    "strict_sum_",
     "Scenario",
     "ScenarioSet",
     "reprice_under",
     "StructureLeg",
+    "StructureLegValue",
+    "StructureValue",
+    "structure_stage",
     "structure_value",
+    "structure_value_fold",
     # diagnostics
     "Diagnostic",
     "DiagnosticReport",

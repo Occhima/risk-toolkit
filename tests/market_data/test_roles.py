@@ -174,4 +174,33 @@ def test_builder_validates_unique_keys() -> None:
     with pytest.raises(Exception):  # noqa: B017,PT011 — DuplicateMarketKeyError
         MarketSnapshot.at(date(2026, 6, 6)).source(
             "curves", dupes, unique_by=("id_indexador", "tenor_days")
-        ).build()
+        ).build(validate=True)
+
+
+def test_market_attach_refuses_non_key_output_overwrite() -> None:
+    Rate = market_role("risk_free_rate").read("curves", "zero_rate").by(payment_days="tenor_days")
+
+    class Input(With[Rate], SchenbergDataFrameModel):
+        instrument_id: str
+        payment_days: int
+        risk_free_rate: float
+
+    trades = pl.DataFrame(
+        {
+            "instrument_id": ["T1"],
+            "payment_days": [252],
+            "risk_free_rate": [999.0],
+        }
+    ).lazy()
+    market = (
+        MarketSnapshot.at(date(2026, 6, 6))
+        .source(
+            "curves",
+            pl.DataFrame({"tenor_days": [252], "zero_rate": [0.10]}),
+            unique_by=("tenor_days",),
+        )
+        .build(validate=False)
+    )
+
+    with pytest.raises(ValueError, match="overwrite existing column"):
+        bind(trades, market, Input).collect()

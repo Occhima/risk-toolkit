@@ -108,10 +108,13 @@ class MarketRequirement:
         output_names = set(self.outputs.values())
         left_key_set = set(self.left_keys)
 
-        # Drop non-join-key left columns that outputs would overwrite.
         non_key_collisions = sorted((output_names - left_key_set) & existing)
         if non_key_collisions:
-            lf = lf.drop(non_key_collisions)
+            raise ValueError(
+                f"market requirement for table {self.table!r} would overwrite existing "
+                f"column(s): {non_key_collisions}. Rename the market role/output or drop "
+                "the columns explicitly before binding."
+            )
 
         result = lf.join(
             right,
