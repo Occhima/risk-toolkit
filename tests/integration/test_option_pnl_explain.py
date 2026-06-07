@@ -1,12 +1,9 @@
 from __future__ import annotations
 
-import importlib
-
 import polars as pl
 import pytest
-
-pnl = importlib.import_module("docs.examples.05_option_pnl_explain")
-vanilla = importlib.import_module("docs.examples.04_vanilla_option")
+from tests.integration import option_pricer as pnl
+from tests.integration import option_pricer as vanilla
 
 
 def test_option_pnl_explain_components_sum() -> None:

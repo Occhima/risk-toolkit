@@ -1,14 +1,11 @@
 from __future__ import annotations
 
-import importlib
-
 import polars as pl
 import pytest
 from polars.exceptions import ColumnNotFoundError
 from schenberg.market_data.path import MarketPath
 from schenberg.risk import Scenario, ScenarioSet, reprice_under
-
-vanilla = importlib.import_module("docs.examples.04_vanilla_option")
+from tests.integration import option_pricer as vanilla
 
 
 def _priced() -> pl.LazyFrame:

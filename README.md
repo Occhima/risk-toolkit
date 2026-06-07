@@ -143,15 +143,28 @@ rollup = book_value_rollup.compute(pv)
 - Missing inputs fail loudly at plan time.
 - Examples define their pricers locally with the public API; Schenberg does not
   centralise those example pricers in a pricing API module.
-- HTML examples are exported directly with `marimo export html`.
+- Example notebooks are Quarto `.qmd` files rendered with `quarto render`.
 
-## Interactive examples
+## Example notebooks (Quarto)
+
+The examples are [Quarto](https://quarto.org/) notebooks that render to
+standalone HTML, leaning on Quarto's native LaTeX (MathJax) and Mermaid so the
+graph's own `to_latex()` / `to_mermaid()` output renders as real math and
+diagrams:
+
+| Notebook | Shows |
+|---|---|
+| `01_forward_pricer.qmd` | A formula graph from scratch — headless params, semantic roles, lazy plan |
+| `02_vanilla_option.qmd` | Black-Scholes price & Greeks, then the same graph swept over a spot ladder |
+| `03_autodiff_greeks.qmd` | One `Expr` → Polars + JAX + LaTeX; autodiff **vanna & volga** reconciled vs finite differences |
+| `04_scenario_var.qmd` | Shocks, named stresses, and a historical **VaR/ES** via `reprice_under` |
+| `05_quantlib_benchmark.qmd` | Price/delta reconciled against **QuantLib**, plus vectorized throughput |
+
+Render them all to HTML (needs the [Quarto CLI](https://quarto.org/docs/get-started/)):
 
 ```bash
-uv run marimo edit docs/examples/01_forward_pricer.py
-uv run marimo edit docs/examples/02_forward_positions.py
-uv run marimo edit docs/examples/03_usdbrl_df_fixing.py
-uv run poe examples-html
+uv run poe examples-html      # render docs/examples/*.qmd -> *.html
+uv run poe examples-preview   # live preview while editing
 ```
 
 ## Install and check
@@ -193,5 +206,6 @@ enriched = bind(trades, market, VanillaOptionInput)
 priced = option_graph.plan(enriched, view="output")  # LazyFrame
 ```
 
-See `docs/examples/04_vanilla_option.py` for Black-Scholes price/Greeks and
-`docs/examples/05_option_pnl_explain.py` for a small lazy repricing PnL explain.
+See `docs/examples/02_vanilla_option.qmd` for Black-Scholes price/Greeks and
+`docs/examples/03_autodiff_greeks.qmd` for autodiff vanna/volga rendered from the
+same symbolic formula.

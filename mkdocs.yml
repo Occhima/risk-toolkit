@@ -69,10 +69,10 @@ nav:
   - Concepts: concepts.md
   - Examples:
       - Forward pricer: examples/01_forward_pricer.html
-      - Forward positions: examples/02_forward_positions.html
-      - USD/BRL DF fixing: examples/03_usdbrl_df_fixing.html
-      - Buy/sell structure: examples/11_buy_sell_structure.html
-      - DI futures risk: examples/12_di_futures_risk.html
+      - Black-Scholes option: examples/02_vanilla_option.html
+      - Autodiff vanna & volga: examples/03_autodiff_greeks.html
+      - Scenarios & historical VaR: examples/04_scenario_var.html
+      - QuantLib benchmark: examples/05_quantlib_benchmark.html
   - Extending: extending.md
   - API Reference:
       - api/index.md

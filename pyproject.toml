@@ -41,6 +41,11 @@ dev = [
   "mkdocstrings[python]>=0.29",
   "marimo>=0.9",
   "matplotlib>=3.9",
+  "ipykernel>=7.2.0",
+  "nbclient>=0.11.0",
+  "nbformat>=5.10.4",
+  "jupyter-client>=8.9.0",
+  "quantlib>=1.42.1",
 ]
 
 [project.optional-dependencies]
@@ -82,19 +87,9 @@ ignore = ["PLR0913"]
 # tests assert against literal expected values.
 "tests/**/*.py" = ["PLR2004"]
 "plugins/*/tests/**/*.py" = ["PLR2004"]
-# marimo notebooks are cell-DAGs of identically-named ``def _`` functions whose
-# last expression is the cell's display value; that idiom is the notebook format,
-# not a smell.
-"docs/examples/01_*.py" = ["F811", "B018", "PLR1711", "PLR0913", "PLR2004", "PLC0415", "I001", "E402"]
-"docs/examples/02_*.py" = ["F811", "B018", "PLR1711", "PLR0913", "PLR2004", "PLC0415", "I001", "E402"]
-"docs/examples/04_*.py" = ["F811", "B018", "PLR1711", "PLR0913", "PLR2004", "PLC0415", "I001", "E402"]
-"docs/examples/05_*.py" = ["F811", "B018", "PLR1711", "PLR0913", "PLR2004", "PLC0415", "I001", "E402"]
-"docs/examples/03_*.py" = ["F811", "B018", "PLR1711", "PLR0913", "PLR2004", "PLC0415", "I001", "E402"]
-"docs/examples/08_*.py" = ["F811", "B018", "PLR1711", "PLR0913", "PLR2004", "PLC0415", "I001", "E402"]
-"docs/examples/09_*.py" = ["F811", "B018", "PLR1711", "PLR0913", "PLR2004", "PLC0415", "I001", "E402"]
-"docs/examples/10_*.py" = ["F811", "B018", "PLR1711", "PLR0913", "PLR2004", "PLC0415", "I001", "E402"]
-"docs/examples/11_*.py" = ["F811", "B018", "PLR1711", "PLR0913", "PLR2004", "PLC0415", "I001", "E402"]
-"docs/examples/12_*.py" = ["F811", "B018", "PLR1711", "PLR0913", "PLR2004", "PLC0415", "I001", "E402"]
+# the shared option pricer defines many small headless formula functions whose
+# parameters legitimately shadow earlier terms / take several market inputs.
+"tests/integration/option_pricer.py" = ["PLR0913"]
 
 [tool.ruff.format]
 quote-style = "double"
@@ -112,11 +107,7 @@ check = ["lint", "typecheck", "test"]
 integration = "pytest tests/integration -m 'not performance'"
 docs-build = "mkdocs build"
 docs-serve = "mkdocs serve --dev-addr 0.0.0.0:8000"
-examples-forward-html = "marimo export html docs/examples/01_forward_pricer.py -o docs/examples/01_forward_pricer.html"
-examples-positions-html = "marimo export html docs/examples/02_forward_positions.py -o docs/examples/02_forward_positions.html"
-examples-usdbrl-html = "marimo export html docs/examples/03_usdbrl_df_fixing.py -o docs/examples/03_usdbrl_df_fixing.html"
-examples-vanilla-option-html = "marimo export html docs/examples/04_vanilla_option.py -o docs/examples/04_vanilla_option.html"
-examples-option-pnl-html = "marimo export html docs/examples/05_option_pnl_explain.py -o docs/examples/05_option_pnl_explain.html"
-examples-structure-html = "marimo export html docs/examples/11_buy_sell_structure.py -o docs/examples/11_buy_sell_structure.html"
-examples-di-risk-html = "marimo export html docs/examples/12_di_futures_risk.py -o docs/examples/12_di_futures_risk.html"
-examples-html = ["examples-forward-html", "examples-positions-html", "examples-usdbrl-html", "examples-vanilla-option-html", "examples-option-pnl-html", "examples-structure-html", "examples-di-risk-html"]
+# Render the Quarto example notebooks to standalone HTML. QUARTO_PYTHON points
+# Quarto's jupyter engine at this project's uv environment.
+examples-html = { cmd = "quarto render docs/examples --to html", env = { QUARTO_PYTHON = "${POE_ROOT}/.venv/bin/python3" } }
+examples-preview = { cmd = "quarto preview docs/examples", env = { QUARTO_PYTHON = "${POE_ROOT}/.venv/bin/python3" } }
