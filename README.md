@@ -159,6 +159,7 @@ diagrams:
 | `03_autodiff_greeks.qmd` | One `Expr` → Polars + JAX + LaTeX; autodiff **vanna & volga** reconciled vs finite differences |
 | `04_scenario_var.qmd` | Shocks, named stresses, and a historical **VaR/ES** via `reprice_under` |
 | `05_quantlib_benchmark.qmd` | Price/delta reconciled against **QuantLib**, plus vectorized throughput |
+| `06_equity_book.qmd` | A B3 equity+option book: a `Router` over two pricers, a custom `PositionView` of measures, a `Fold` roll-up, and a market stress — full stack, end to end |
 
 Render them all to HTML (needs the [Quarto CLI](https://quarto.org/docs/get-started/)):
 
