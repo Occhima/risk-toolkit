@@ -129,6 +129,18 @@ class MarketRole:
         fix = rule if isinstance(rule, Fixing) else Fixing.rule(rule)
         return replace(self, fixing_quote=quote_col, fixing_rule=fix)
 
+    def for_tenor(self, contract_col: str, quote_col: str | None = None) -> MarketRole:
+        """Semantic alias for a tenor join key."""
+        return self.by(**{contract_col: quote_col or "tenor_days"})
+
+    def for_expiry(self, contract_col: str, quote_col: str | None = None) -> MarketRole:
+        """Semantic alias for an expiry join key."""
+        return self.by(**{contract_col: quote_col or "expiry"})
+
+    def for_strike(self, contract_col: str, quote_col: str | None = None) -> MarketRole:
+        """Semantic alias for a strike join key."""
+        return self.by(**{contract_col: quote_col or "strike"})
+
     def _requirement(self, bindings: tuple[ColumnBinding, ...]) -> MarketRequirement:
         if self.source is None or self.value_col is None:
             raise ValueError(f"role {self.name!r} has no .read(source, value_col)")
@@ -172,6 +184,7 @@ class With:
     user-supplied — the schema declares them, the user never passes them."""
 
     def __class_getitem__(cls, role: MarketRole) -> type[pa.DataFrameModel]:
+        role = role.to_role() if hasattr(role, "to_role") else role
         namespace: dict[str, Any] = {
             "__annotations__": {role.name: float},
             "__module__": __name__,

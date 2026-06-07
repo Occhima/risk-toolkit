@@ -76,3 +76,33 @@ to `PositionView`, reusable position measures, and `Fold` rollups.
 Instrument-specific example pricers live in `docs/examples` as self-contained
 notebooks/scripts that use the public Schenberg API. They are exported directly
 with `marimo export html`; no shell export wrapper is needed.
+
+## Market semantics stop at `bind`
+
+A formula graph is a pure symbolic program. It must not look up market data or
+know whether a resolved input came from a curve, fixing table, or volatility
+surface. Market semantics live in `MarketRole` declarations, including the light
+semantic DSL:
+
+```python
+Spot = FIXINGS.value("USD/BRL", as_="spot").source("fixings").by(
+    currency_pair="currency_pair"
+)
+Vol = (
+    VOLS.implied("USD/BRL", as_="vol")
+    .source("vol_surface")
+    .for_expiry("expiry")
+    .for_strike("strike")
+)
+
+class VanillaOptionInput(With[Spot], With[Vol], With[RiskFree], SchenbergDataFrameModel):
+    ...
+
+enriched = bind(trades, market, VanillaOptionInput)
+priced = option_graph.plan(enriched, view="output")
+```
+
+The graph receives ordinary columns such as `spot`, `strike`, `risk_free_rate`,
+`vol`, and `time_to_maturity`. Public pricer functions should keep Pandera-style
+boundary validation (`@price_function`, `check_input`, `check_output`, or
+`check_io`) around schemas; graph planning remains lazy formula compilation.

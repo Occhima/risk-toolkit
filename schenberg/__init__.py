@@ -22,6 +22,8 @@ from schenberg.core.expr import (
     grad,
     lit,
     log,
+    normal_cdf,
+    normal_pdf,
     sqrt,
     to_latex,
     var,
@@ -40,10 +42,13 @@ from schenberg.market_data.roles import (
     market_role,
     roles_of,
 )
+from schenberg.market_data.semantic import CURVES, FIXINGS, VOLS
 from schenberg.market_data.shocks import Shock
 from schenberg.market_data.snapshot import MarketSnapshot
 from schenberg.market_data.sources import MarketSource
 from schenberg.position import PositionView
+from schenberg.risk import Scenario, ScenarioSet, reprice_under
+from schenberg.structure import StructureLeg, structure_value
 
 __all__ = [
     # the pricing language
@@ -55,6 +60,8 @@ __all__ = [
     "lit",
     "exp",
     "log",
+    "normal_cdf",
+    "normal_pdf",
     "sqrt",
     "abs_",
     "where",
@@ -78,6 +85,9 @@ __all__ = [
     "MarketRequirement",
     "MarketPath",
     "Shock",
+    "CURVES",
+    "FIXINGS",
+    "VOLS",
     # composition / aggregation / position
     "Router",
     "Fold",
@@ -86,6 +96,11 @@ __all__ = [
     "first_",
     "lit_",
     "sum_",
+    "Scenario",
+    "ScenarioSet",
+    "reprice_under",
+    "StructureLeg",
+    "structure_value",
     # diagnostics
     "Diagnostic",
     "DiagnosticReport",

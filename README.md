@@ -156,3 +156,37 @@ uv sync --all-groups
 uv run pytest
 uv run poe check
 ```
+
+## Semantic market roles and option example
+
+`FormulaGraph` sees only resolved parameters. Semantic helpers such as `CURVES`,
+`FIXINGS`, and `VOLS` build `MarketRole` declarations outside the graph; `bind(...)`
+uses those roles to enrich a trade frame, and `graph.plan(...)` prices lazily.
+Pandera validation belongs at public pricer/schema boundaries (for example via
+`@price_function`), not inside formula math.
+
+```python
+from schenberg import CURVES, FIXINGS, VOLS, FormulaGraph, With, bind
+
+Spot = FIXINGS.value("USD/BRL", as_="spot").source("fixings").by(
+    currency_pair="currency_pair"
+)
+Vol = (
+    VOLS.implied("USD/BRL", as_="vol")
+    .source("vol_surface")
+    .for_expiry("expiry")
+    .for_strike("strike")
+)
+RiskFree = CURVES.zero_rate("BRL_DI", as_="risk_free_rate").source("curves").for_tenor(
+    "payment_days"
+)
+
+class VanillaOptionInput(With[Spot], With[Vol], With[RiskFree], SchenbergDataFrameModel):
+    ...
+
+enriched = bind(trades, market, VanillaOptionInput)
+priced = option_graph.plan(enriched, view="output")  # LazyFrame
+```
+
+See `docs/examples/04_vanilla_option.py` for Black-Scholes price/Greeks and
+`docs/examples/05_option_pnl_explain.py` for a small lazy repricing PnL explain.
