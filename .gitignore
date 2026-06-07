@@ -22,6 +22,11 @@ dist/
 
 # Docs build output
 site/
+docs/examples/_book/
+
+# Quarto intermediate files
+docs/examples/.quarto/
+docs/examples/**/*.quarto_ipynb
 
 # OS/editor
 .DS_Store
