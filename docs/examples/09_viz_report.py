@@ -23,6 +23,8 @@ def _():
     from schenberg_viz import (
         graph_report,
         stage_preview,
+        graph_png_url,
+        latex_png_url,
         to_html,
         to_markdown,
         to_mermaid,
@@ -31,7 +33,9 @@ def _():
 
     return (
         forward_formula,
+        graph_png_url,
         graph_report,
+        latex_png_url,
         mo,
         pl,
         stage_preview,
@@ -43,11 +47,12 @@ def _():
 
 
 @app.cell
-def _(forward_formula, to_html, to_markdown, to_mermaid):
+def _(forward_formula, graph_png_url, to_html, to_markdown, to_mermaid):
     mermaid = to_mermaid(forward_formula, view="output")
     markdown = to_markdown(forward_formula, view="output")
     html = to_html(forward_formula, view="output")
-    return html, markdown, mermaid
+    png_url = graph_png_url(forward_formula, view="output")
+    return html, markdown, mermaid, png_url
 
 
 @app.cell
@@ -74,8 +79,21 @@ def _(forward_formula, pl, stage_preview):
 
 
 @app.cell(hide_code=True)
-def _(markdown, mo, preview):
-    mo.vstack([mo.md(markdown), mo.md("## Preview"), mo.ui.table(preview)])
+def _(forward_formula, latex_png_url, mo, png_url, preview):
+    formula_cards = [
+        mo.vstack([mo.md(f"**{name}**"), mo.image(latex_png_url(formula), alt=formula)])
+        for name, formula in forward_formula.formulas().items()
+    ]
+    mo.vstack(
+        [
+            mo.md("## Grafo renderizado por endpoint PNG"),
+            mo.image(png_url, alt="Forward pricing graph", width="100%"),
+            mo.md("## Fórmulas renderizadas como PNG"),
+            mo.vstack(formula_cards),
+            mo.md("## Preview"),
+            mo.ui.table(preview),
+        ]
+    )
     return
 
 

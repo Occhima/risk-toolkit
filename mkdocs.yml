@@ -71,6 +71,8 @@ nav:
       - Forward pricer: examples/01_forward_pricer.html
       - Forward positions: examples/02_forward_positions.html
       - USD/BRL DF fixing: examples/03_usdbrl_df_fixing.html
+      - Buy/sell structure: examples/11_buy_sell_structure.html
+      - DI futures risk: examples/12_di_futures_risk.html
   - Extending: extending.md
   - API Reference:
       - api/index.md
