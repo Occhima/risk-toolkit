@@ -15,6 +15,7 @@
       pkgs.just
       pkgs.nil
       pkgs.ruff
+      pkgs.quarto
     ];
 
     uvSync = ''

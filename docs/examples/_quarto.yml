@@ -1,6 +1,18 @@
 project:
-  title: "Schenberg examples"
+  type: book
+  output-dir: _book
   execute-dir: file
+
+book:
+  title: "Schenberg Risk Toolkit — Examples"
+  chapters:
+    - index.qmd
+    - 01_forward_pricer.qmd
+    - 02_vanilla_option.qmd
+    - 03_autodiff_greeks.qmd
+    - 04_scenario_var.qmd
+    - 05_quantlib_benchmark.qmd
+    - 06_equity_book.qmd
 
 format:
   html:
@@ -9,7 +21,6 @@ format:
       dark: darkly
     toc: true
     toc-depth: 3
-    toc-location: left
     code-fold: false
     code-tools: true
     code-copy: true
@@ -19,8 +30,6 @@ format:
     fig-height: 4.5
     fig-format: svg
     highlight-style: github
-    page-layout: full
-    embed-resources: true
     smooth-scroll: true
     anchor-sections: true
 
