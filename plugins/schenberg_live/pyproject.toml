@@ -3,21 +3,22 @@ requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [project]
-name = "schenberg-distributed"
+name = "schenberg-live"
 version = "0.1.0"
-description = "Distributed pricing execution contexts for Schenberg Polars graph computations."
+description = "In-memory event-driven valuation engine for Schenberg valuation plans."
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
 authors = [{ name = "Schenberg contributors" }]
 dependencies = [
   "polars>=1.30",
-  "rustworkx>=0.16",
   "schenberg",
+  "schenberg-distributed",
 ]
 
 [tool.uv.sources]
 schenberg = { workspace = true }
+schenberg-distributed = { workspace = true }
 
 [dependency-groups]
 dev = [
@@ -27,12 +28,4 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["schenberg_distributed"]
-
-[project.optional-dependencies]
-dask = [
-  "dask[distributed]>=2025.0",
-]
-ray = [
-  "ray[data]>=2.40",
-]
+packages = ["schenberg_live"]

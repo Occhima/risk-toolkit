@@ -25,6 +25,8 @@ members = ["plugins/*"]
 
 [tool.uv.sources]
 schenberg-distributed = { workspace = true }
+schenberg-viz = { workspace = true }
+schenberg-live = { workspace = true }
 
 [dependency-groups]
 dev = [
@@ -33,6 +35,8 @@ dev = [
   "ty>=0.0.1a16",
   "poethepoet>=0.36",
   "schenberg-distributed",
+  "schenberg-viz",
+  "schenberg-live",
   "mkdocs-material>=9.5",
   "mkdocstrings[python]>=0.29",
   "marimo>=0.9",
@@ -56,7 +60,7 @@ packages = ["schenberg"]
 
 [tool.pytest.ini_options]
 addopts = "-ra"
-testpaths = ["tests"]
+testpaths = ["tests", "plugins/*/tests"]
 markers = [
   "performance: throughput guardrails (run with `pytest tests/integration`)",
 ]
@@ -77,12 +81,16 @@ ignore = ["PLR0913"]
 "schenberg/core/expr.py" = ["PLR0911", "PLR0912", "PLR2004", "PLC0415"]
 # tests assert against literal expected values.
 "tests/**/*.py" = ["PLR2004"]
+"plugins/*/tests/**/*.py" = ["PLR2004"]
 # marimo notebooks are cell-DAGs of identically-named ``def _`` functions whose
 # last expression is the cell's display value; that idiom is the notebook format,
 # not a smell.
 "docs/examples/01_*.py" = ["F811", "B018", "PLR1711", "PLR0913", "PLR2004", "PLC0415", "I001", "E402"]
 "docs/examples/02_*.py" = ["F811", "B018", "PLR1711", "PLR0913", "PLR2004", "PLC0415", "I001", "E402"]
 "docs/examples/03_*.py" = ["F811", "B018", "PLR1711", "PLR0913", "PLR2004", "PLC0415", "I001", "E402"]
+"docs/examples/08_*.py" = ["F811", "B018", "PLR1711", "PLR0913", "PLR2004", "PLC0415", "I001", "E402"]
+"docs/examples/09_*.py" = ["F811", "B018", "PLR1711", "PLR0913", "PLR2004", "PLC0415", "I001", "E402"]
+"docs/examples/10_*.py" = ["F811", "B018", "PLR1711", "PLR0913", "PLR2004", "PLC0415", "I001", "E402"]
 
 [tool.ruff.format]
 quote-style = "double"
